@@ -1,6 +1,7 @@
 import UIKit
 import FaceTecSDK
 import React
+import AVFoundation
 
 // MARK: - Protocol
 protocol FaceTecLivenessButtonDelegate: AnyObject {
@@ -84,7 +85,46 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
 
         addTarget(self, action: #selector(buttonPressed), for: .touchUpInside)
 
-        initializeFaceTec()
+        checkCameraPermissionAndInitialize()
+    }
+
+    // MARK: - Camera Permission
+
+    private func checkCameraPermissionAndInitialize() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            initializeFaceTec()
+
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        self?.initializeFaceTec()
+                    } else {
+                        self?.handleCameraPermissionDenied()
+                    }
+                }
+            }
+
+        case .denied, .restricted:
+            handleCameraPermissionDenied()
+
+        @unknown default:
+            handleCameraPermissionDenied()
+        }
+    }
+
+    private func handleCameraPermissionDenied() {
+        self.hasInitError = true
+        self.isSDKReady = false
+
+        DispatchQueue.main.async {
+            self.setTitle("Permiso de camara denegado", for: .normal)
+            self.backgroundColor = .systemRed
+            self.isEnabled = false
+        }
+
+        emitResponse(success: false, status: "permissionDenied", message: "Permiso de camara denegado")
     }
 
     // MARK: - FaceTec Initialization
@@ -122,8 +162,6 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
         // Emit error event to React Native
         let errorMessage = FaceTec.sdk.description(for: error)
         emitResponse(success: false, status: "initError", message: errorMessage)
-
-        print("FaceTec init error: \(errorMessage)")
     }
 
     // MARK: - Button Action
@@ -134,7 +172,6 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
         }
 
         guard let parentVC = findParentViewController() else {
-            print("No se encontro el ViewController padre")
             emitResponse(success: false, status: "error", message: "No se encontro el ViewController padre")
             return
         }

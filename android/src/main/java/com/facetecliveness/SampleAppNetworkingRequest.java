@@ -1,7 +1,5 @@
 package com.facetecliveness;
 
-import android.util.Log;
-
 import androidx.annotation.NonNull;
 
 import com.facetec.sdk.FaceTecSDK;
@@ -25,6 +23,7 @@ import okhttp3.RequestBody;
 // - Adding additional asynchronous calls to this code is not allowed.  Only make your own additional asynchronous calls once the FaceTec UI is closed.
 // - Adding code that modifies any App UI (Yours or FaceTec's) is not allowed.  Only add code that modifies your own App UI once the FaceTec UI is closed.
 public class SampleAppNetworkingRequest {
+
     public static void send(
             @NonNull SessionRequestProcessor referencingProcessor,
             @NonNull String sessionRequestBlob,
@@ -111,8 +110,6 @@ public class SampleAppNetworkingRequest {
                 // On catastrophic error, call the onCatastrophicNetworkError handler
                 // This should never be called except when a hard server error occurs. For example the user loses network connectivity.
                 // You may want to implement some sort of retry logic here
-                Log.d("FaceTecSDKSampleApp", "Exception raised while attempting HTTPS call.");
-
                 referencingProcessor.onCatastrophicNetworkError(sessionRequestCallback);
             }
         });
@@ -144,7 +141,6 @@ public class SampleAppNetworkingRequest {
     }
 
     static void logErrorAndCallAbortAndClose(String errorDetail, SessionRequestProcessor referencingProcessor, okhttp3.Response response, @NonNull FaceTecSessionRequestProcessor.Callback sessionRequestCallback) {
-        Log.d("FaceTecSDKSampleApp", "Networking Exception raised while attempting HTTPS call. Details: " + errorDetail);
         referencingProcessor.onCatastrophicNetworkError(sessionRequestCallback);
         response.close();
     }

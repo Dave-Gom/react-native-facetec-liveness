@@ -92,35 +92,16 @@ dependencies {
 }
 ```
 
-### 3. Register package in MainApplication
+### 3. Add flatDir repository for FaceTec SDK AAR
 
-**For Kotlin (`MainApplication.kt`):**
+In `android/app/build.gradle`, add at the end of the file (after the `apply from` statements):
 
-```kotlin
-import com.facetecliveness.FaceTecLivenessPackage
-
-class MainApplication : Application(), ReactApplication {
-    override val reactNativeHost: ReactNativeHost =
-        object : DefaultReactNativeHost(this) {
-            override fun getPackages(): List<ReactPackage> =
-                PackageList(this).packages.apply {
-                    add(FaceTecLivenessPackage())
-                }
-            // ... rest of config
-        }
-}
-```
-
-**For Java (`MainApplication.java`):**
-
-```java
-import com.facetecliveness.FaceTecLivenessPackage;
-
-@Override
-protected List<ReactPackage> getPackages() {
-    List<ReactPackage> packages = new PackageList(this).getPackages();
-    packages.add(new FaceTecLivenessPackage());
-    return packages;
+```gradle
+repositories {
+    // FaceTec SDK AAR
+    flatDir {
+        dirs '../../native_modules/react-native-facetec-liveness/android/libs'
+    }
 }
 ```
 
@@ -190,12 +171,14 @@ interface LivenessResponse {
   success: boolean;
   status: LivenessStatus;
   message: string;
+  responseBlob?: string; // Response blob from FaceTec server (only on success)
 }
 
 type LivenessStatus =
   | 'success'
   | 'error'
   | 'initError'
+  | 'permissionDenied'
   | 'cancelled'
   | 'SESSION_COMPLETED'
   | 'USER_CANCELLED_FACE_SCAN'
@@ -236,8 +219,15 @@ YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT = "https://your-api-endpoint.com"
 
 Ensure you have:
 1. Added the pod to Podfile and run `pod install`
-2. Registered `FaceTecLivenessPackage` in MainApplication
-3. Rebuilt the app (not just hot reload)
+2. Rebuilt the app (not just hot reload)
+
+### Error: "Native module FaceTecLivenessModule tried to override FaceTecLivenessModule"
+
+This happens when the module is registered twice. React Native autolinking handles module registration automatically, so **do NOT manually register** `FaceTecLivenessPackage` in `MainApplication.kt` or `MainApplication.java`. If you added it manually, remove it.
+
+### Error: "Could not find :facetec-sdk-X.X.X"
+
+Make sure you added the `flatDir` repository configuration in `android/app/build.gradle` (see step 3 of Android Setup).
 
 ### Error: "Using bridging headers with framework targets is unsupported"
 

@@ -2,7 +2,6 @@ package com.facetecliveness;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -25,7 +24,6 @@ import java.util.Map;
 public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLivenessButton> {
 
     public static final String REACT_CLASS = "FaceTecLivenessButton";
-    private static final String TAG = "FaceTecLivenessVM";
 
     private final ReactApplicationContext reactContext;
 
@@ -94,8 +92,6 @@ public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLiven
         ThemedReactContext context = (ThemedReactContext) button.getContext();
         context.getJSModule(RCTEventEmitter.class)
                 .receiveEvent(button.getId(), "onResponse", event);
-
-        Log.d(TAG, "Event sent: success=" + success + ", status=" + status + ", hasBlob=" + (responseBlob != null));
     }
 
     @ReactProp(name = "initializingText")

@@ -142,7 +142,6 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
     }
     
     func logErrorAndCallAbortAndClose(errorDetail: String) {
-        print("Networking Exception raised while attempting HTTPS call. Details: " + errorDetail);
         self.referencingProcessor.onCatastrophicNetworkError(sessionRequestCallback: self.sessionRequestCallback)
     }
     

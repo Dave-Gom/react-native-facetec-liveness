@@ -2,7 +2,6 @@ package com.facetecliveness;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -24,7 +23,6 @@ import java.lang.ref.WeakReference;
 
 public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
     private static final String MODULE_NAME = "FaceTecLivenessModule";
-    private static final String TAG = "FaceTecLivenessModule";
 
     private final ReactApplicationContext reactContext;
     private static WeakReference<RNFaceTecLivenessButton> currentButtonRef;
@@ -33,18 +31,16 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
         @Override
         public void onActivityResult(Activity activity, int requestCode, int resultCode, @Nullable Intent data) {
             if (requestCode == FaceTecSDK.REQUEST_CODE_SESSION) {
-                Log.d(TAG, "Activity result received for FaceTec session");
-
+                // Get the result ONCE - getActivitySessionResult may consume the data
                 FaceTecSessionResult result = FaceTecSDK.getActivitySessionResult(requestCode, resultCode, data);
 
                 if (result != null) {
                     FaceTecSessionStatus status = result.getStatus();
-                    Log.d(TAG, "Session status: " + status.name());
 
-                    // Notify the current button if exists
+                    // Notify the current button if exists - pass the result directly
                     RNFaceTecLivenessButton button = currentButtonRef != null ? currentButtonRef.get() : null;
                     if (button != null) {
-                        button.handleActivityResult(requestCode, resultCode, data);
+                        button.handleSessionResult(result);
                     }
 
                     // Also emit a global event that can be listened to
@@ -108,14 +104,18 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
 
     /**
      * Check if FaceTec SDK is initialized
+     * Note: This is a simplified check - the actual initialization state
+     * is managed by the button component
      */
     @ReactMethod
     public void isInitialized(com.facebook.react.bridge.Promise promise) {
         try {
-            boolean initialized = FaceTecSDK.getStatus() == com.facetec.sdk.FaceTecSDKStatus.INITIALIZED;
-            promise.resolve(initialized);
+            // The SDK doesn't expose a direct status check in this version
+            // Return true if we can get the version (indicates SDK is loaded)
+            String version = FaceTecSDK.version();
+            promise.resolve(version != null && !version.isEmpty());
         } catch (Exception e) {
-            promise.reject("ERROR", e.getMessage());
+            promise.resolve(false);
         }
     }
 

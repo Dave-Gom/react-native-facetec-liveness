@@ -8,7 +8,6 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 
@@ -18,15 +17,20 @@ import androidx.appcompat.widget.AppCompatButton;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import com.facebook.react.bridge.ReactContext;
+import com.facebook.react.modules.core.PermissionAwareActivity;
+import com.facebook.react.modules.core.PermissionListener;
+
 import com.facetec.sdk.FaceTecInitializationError;
 import com.facetec.sdk.FaceTecSDK;
 import com.facetec.sdk.FaceTecSDKInstance;
 import com.facetec.sdk.FaceTecSessionResult;
 import com.facetec.sdk.FaceTecSessionStatus;
 
-public class RNFaceTecLivenessButton extends AppCompatButton {
-    private static final String TAG = "RNFaceTecLivenessBtn";
+public class RNFaceTecLivenessButton extends AppCompatButton implements PermissionListener {
     public static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
+
+    private boolean permissionRequested = false;
 
     // SDK Instance
     private FaceTecSDKInstance sdkInstance;
@@ -135,15 +139,70 @@ public class RNFaceTecLivenessButton extends AppCompatButton {
 
     private void checkCameraPermissionAndInitialize() {
         Context context = getContext();
+
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED) {
             initializeFaceTecSDK();
+        } else {
+            requestCameraPermission();
+        }
+    }
+
+    private void requestCameraPermission() {
+        if (permissionRequested) {
+            return;
+        }
+
+        Context context = getContext();
+        Activity activity = null;
+
+        // Get the activity from ReactContext
+        if (context instanceof ReactContext) {
+            activity = ((ReactContext) context).getCurrentActivity();
         } else if (context instanceof Activity) {
+            activity = (Activity) context;
+        }
+
+        if (activity instanceof PermissionAwareActivity) {
+            permissionRequested = true;
+            ((PermissionAwareActivity) activity).requestPermissions(
+                    new String[]{Manifest.permission.CAMERA},
+                    CAMERA_PERMISSION_REQUEST_CODE,
+                    this
+            );
+        } else if (activity != null) {
+            permissionRequested = true;
             ActivityCompat.requestPermissions(
-                    (Activity) context,
+                    activity,
                     new String[]{Manifest.permission.CAMERA},
                     CAMERA_PERMISSION_REQUEST_CODE
             );
+        } else {
+            handlePermissionDenied();
+        }
+    }
+
+    @Override
+    public boolean onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                initializeFaceTecSDK();
+            } else {
+                handlePermissionDenied();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private void handlePermissionDenied() {
+        post(() -> {
+            setText("Permiso de camara denegado");
+            setButtonBackground(COLOR_RED);
+            setEnabled(false);
+        });
+        if (resultListener != null) {
+            resultListener.onInitializationError("Permiso de camara denegado");
         }
     }
 
@@ -151,20 +210,12 @@ public class RNFaceTecLivenessButton extends AppCompatButton {
         if (granted) {
             initializeFaceTecSDK();
         } else {
-            post(() -> {
-                setText("Permiso de camara denegado");
-                setButtonBackground(COLOR_RED);
-                setEnabled(false);
-            });
-            if (resultListener != null) {
-                resultListener.onInitializationError("Permiso de camara denegado");
-            }
+            handlePermissionDenied();
         }
     }
 
     private void initializeFaceTecSDK() {
         Context context = getContext();
-        Log.d(TAG, "Iniciando inicializacion del SDK...");
 
         try {
             FaceTecSDK.initializeWithSessionRequest(
@@ -174,7 +225,6 @@ public class RNFaceTecLivenessButton extends AppCompatButton {
                     new FaceTecSDK.InitializeCallback() {
                         @Override
                         public void onSuccess(@NonNull FaceTecSDKInstance _sdkInstance) {
-                            Log.d(TAG, "SDK inicializado exitosamente");
                             sdkInstance = _sdkInstance;
                             isInitialized = true;
                             hasInitError = false;
@@ -187,7 +237,6 @@ public class RNFaceTecLivenessButton extends AppCompatButton {
 
                         @Override
                         public void onError(@NonNull FaceTecInitializationError error) {
-                            Log.e(TAG, "Error de inicializacion: " + error.name());
                             hasInitError = true;
                             isInitialized = false;
                             post(() -> {
@@ -202,7 +251,6 @@ public class RNFaceTecLivenessButton extends AppCompatButton {
                     }
             );
         } catch (Exception e) {
-            Log.e(TAG, "Excepcion durante inicializacion: " + e.getMessage(), e);
             hasInitError = true;
             post(() -> {
                 setText(errorText);
@@ -216,36 +264,90 @@ public class RNFaceTecLivenessButton extends AppCompatButton {
     }
 
     private void startLiveness() {
-        if (sdkInstance != null && isInitialized && getContext() instanceof Activity) {
-            sdkInstance.start3DLiveness((Activity) getContext(), new SessionRequestProcessor());
+        if (sdkInstance == null || !isInitialized) {
+            return;
         }
+
+        // Get activity from context
+        Activity activity = getActivityFromContext();
+
+        if (activity == null) {
+            if (resultListener != null) {
+                resultListener.onInitializationError("No se pudo obtener la actividad");
+            }
+            return;
+        }
+
+        // Register this button with the module to receive activity results
+        FaceTecLivenessModule.setCurrentButton(this);
+
+        sdkInstance.start3DLiveness(activity, new SessionRequestProcessor());
+    }
+
+    private Activity getActivityFromContext() {
+        Context context = getContext();
+
+        // First try: direct cast if context is Activity
+        if (context instanceof Activity) {
+            return (Activity) context;
+        }
+
+        // Second try: get from ReactContext
+        if (context instanceof ReactContext) {
+            Activity activity = ((ReactContext) context).getCurrentActivity();
+            if (activity != null) {
+                return activity;
+            }
+        }
+
+        // Third try: unwrap ContextWrapper
+        while (context instanceof android.content.ContextWrapper) {
+            if (context instanceof Activity) {
+                return (Activity) context;
+            }
+            context = ((android.content.ContextWrapper) context).getBaseContext();
+        }
+
+        return null;
     }
 
     public void handleActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        // Note: This method is kept for backwards compatibility but may not work
+        // because getActivitySessionResult may have already been called.
+        // Use handleSessionResult instead when the result is available.
         if (requestCode == FaceTecSDK.REQUEST_CODE_SESSION) {
             FaceTecSessionResult result = FaceTecSDK.getActivitySessionResult(requestCode, resultCode, data);
-
             if (result != null) {
-                FaceTecSessionStatus status = result.getStatus();
-                Log.d(TAG, "Resultado de liveness: " + status.name());
-
-                // Get the stored response blob
-                String responseBlob = SessionRequestProcessor.getLastResponseBlob();
-
-                if (status == FaceTecSessionStatus.SESSION_COMPLETED) {
-                    Log.d(TAG, "Liveness check exitoso!");
-                    if (resultListener != null) {
-                        resultListener.onLivenessSuccess(result, responseBlob);
-                    }
-                } else {
-                    if (resultListener != null) {
-                        resultListener.onLivenessError(status);
-                    }
-                }
-
-                // Clear the stored blob after use
-                SessionRequestProcessor.clearLastResponseBlob();
+                handleSessionResult(result);
             }
         }
+    }
+
+    /**
+     * Handle the FaceTec session result directly.
+     * This should be called when the result is already available (from FaceTecLivenessModule).
+     */
+    public void handleSessionResult(FaceTecSessionResult result) {
+        if (result == null) {
+            return;
+        }
+
+        FaceTecSessionStatus status = result.getStatus();
+
+        // Get the stored response blob
+        String responseBlob = SessionRequestProcessor.getLastResponseBlob();
+
+        if (status == FaceTecSessionStatus.SESSION_COMPLETED) {
+            if (resultListener != null) {
+                resultListener.onLivenessSuccess(result, responseBlob);
+            }
+        } else {
+            if (resultListener != null) {
+                resultListener.onLivenessError(status);
+            }
+        }
+
+        // Clear the stored blob after use
+        SessionRequestProcessor.clearLastResponseBlob();
     }
 }

@@ -15,6 +15,7 @@ export type LivenessStatus =
   | 'success'
   | 'error'
   | 'initError'
+  | 'permissionDenied'
   | 'cancelled'
   | 'SESSION_COMPLETED'
   | 'USER_CANCELLED_FACE_SCAN'
