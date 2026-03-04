@@ -1,0 +1,247 @@
+import UIKit
+import FaceTecSDK
+
+@objc(FaceTecLivenessViewManager)
+class FaceTecLivenessViewManager: RCTViewManager {
+
+    override func view() -> UIView! {
+        let button = RNFaceTecLivenessButton(frame: .zero)
+        return button
+    }
+
+    override static func requiresMainQueueSetup() -> Bool {
+        return true
+    }
+}
+
+// MARK: - RNFaceTecLivenessButton (Wrapper para React Native)
+
+class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLivenessButtonDelegate {
+
+    // MARK: - React Native Event Callback
+
+    @objc var onResponse: RCTBubblingEventBlock?
+
+    // MARK: - Configurable Text Properties
+
+    @objc var initializingText: String = "Iniciando" {
+        didSet {
+            if !isSDKReady && !hasInitError {
+                setTitle(initializingText, for: .normal)
+            }
+        }
+    }
+
+    @objc var readyText: String = "Iniciar prueba de vida" {
+        didSet {
+            if isSDKReady {
+                setTitle(readyText, for: .normal)
+            }
+        }
+    }
+
+    @objc var errorText: String = "Error de inicializacion" {
+        didSet {
+            if hasInitError {
+                setTitle(errorText, for: .normal)
+            }
+        }
+    }
+
+    // MARK: - Properties
+
+    private var facetecSDKInstance: FaceTecSDKInstance?
+    private var isSDKReady = false
+    private var hasInitError = false
+
+    // MARK: - Init
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    private func setup() {
+        setTitle(initializingText, for: .normal)
+        setTitleColor(.white, for: .normal)
+        backgroundColor = .systemGray
+        layer.cornerRadius = 8
+        isEnabled = false
+        clipsToBounds = true
+
+        titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
+
+        addTarget(self, action: #selector(buttonPressed), for: .touchUpInside)
+
+        initializeFaceTec()
+    }
+
+    // MARK: - FaceTec Initialization
+
+    private func initializeFaceTec() {
+        FaceTec.sdk.initializeWithSessionRequest(
+            deviceKeyIdentifier: Config.DeviceKeyIdentifier,
+            sessionRequestProcessor: SessionRequestProcessor(),
+            completion: self
+        )
+    }
+
+    func onFaceTecSDKInitializeSuccess(sdkInstance: FaceTecSDKInstance) {
+        self.facetecSDKInstance = sdkInstance
+        self.isSDKReady = true
+        self.hasInitError = false
+
+        DispatchQueue.main.async {
+            self.setTitle(self.readyText, for: .normal)
+            self.backgroundColor = .systemBlue
+            self.isEnabled = true
+        }
+    }
+
+    func onFaceTecSDKInitializeError(error: FaceTecInitializationError) {
+        self.hasInitError = true
+        self.isSDKReady = false
+
+        DispatchQueue.main.async {
+            self.setTitle(self.errorText, for: .normal)
+            self.backgroundColor = .systemRed
+            self.isEnabled = false
+        }
+
+        // Emit error event to React Native
+        let errorMessage = FaceTec.sdk.description(for: error)
+        emitResponse(success: false, status: "initError", message: errorMessage)
+
+        print("FaceTec init error: \(errorMessage)")
+    }
+
+    // MARK: - Button Action
+
+    @objc private func buttonPressed() {
+        guard isSDKReady, let sdkInstance = facetecSDKInstance else {
+            return
+        }
+
+        guard let parentVC = findParentViewController() else {
+            print("No se encontro el ViewController padre")
+            emitResponse(success: false, status: "error", message: "No se encontro el ViewController padre")
+            return
+        }
+
+        startLiveness(sdkInstance: sdkInstance, parentVC: parentVC)
+    }
+
+    private func startLiveness(sdkInstance: FaceTecSDKInstance, parentVC: UIViewController) {
+        // Crear contenedor
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.backgroundColor = .black
+        container.tag = 999
+
+        parentVC.view.addSubview(container)
+
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: parentVC.view.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: parentVC.view.trailingAnchor),
+            container.topAnchor.constraint(equalTo: parentVC.view.topAnchor),
+            container.bottomAnchor.constraint(equalTo: parentVC.view.bottomAnchor)
+        ])
+
+        // Crear processor con callback
+        let processor = SessionRequestProcessor()
+        processor.onComplete = { [weak self, weak parentVC] result in
+            DispatchQueue.main.async {
+                self?.handleLivenessResult(result, parentVC: parentVC)
+            }
+        }
+
+        // Crear FaceTec VC
+        let faceTecVC = sdkInstance.start3DLiveness(with: processor)
+
+        // Containment
+        parentVC.addChild(faceTecVC)
+        container.addSubview(faceTecVC.view)
+        faceTecVC.view.frame = container.bounds
+        faceTecVC.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        faceTecVC.didMove(toParent: parentVC)
+    }
+
+    // MARK: - Handle Result
+
+    private func handleLivenessResult(_ result: FaceTecSessionResult, parentVC: UIViewController?) {
+        let success = result.sessionStatus == .sessionCompleted
+        var status: String
+        var message: String
+
+        switch result.sessionStatus {
+        case .sessionCompleted:
+            status = "SESSION_COMPLETED"
+            message = "Liveness completado exitosamente"
+        case .userCancelledFaceScan:
+            status = "USER_CANCELLED_FACE_SCAN"
+            message = "Usuario cancelo el proceso"
+        case .requestAborted:
+            status = "REQUEST_ABORTED"
+            message = "Request abortada"
+        default:
+            status = "error"
+            message = "Resultado: \(result.sessionStatus)"
+        }
+
+        // Limpiar UI
+        cleanup(parentVC: parentVC)
+
+        // Emitir evento a React Native
+        emitResponse(success: success, status: status, message: message)
+    }
+
+    private func cleanup(parentVC: UIViewController?) {
+        guard let parentVC = parentVC else { return }
+
+        // Remover FaceTec VC
+        for child in parentVC.children {
+            child.willMove(toParent: nil)
+            child.view.removeFromSuperview()
+            child.removeFromParent()
+        }
+
+        // Remover contenedor
+        parentVC.view.viewWithTag(999)?.removeFromSuperview()
+    }
+
+    // MARK: - React Native Event Emission
+
+    private func emitResponse(success: Bool, status: String, message: String) {
+        guard let onResponse = onResponse else { return }
+
+        onResponse([
+            "success": success,
+            "status": status,
+            "message": message
+        ])
+    }
+
+    // MARK: - FaceTecLivenessButtonDelegate
+
+    func faceTecLivenessDidComplete(success: Bool, result: FaceTecSessionResult?) {
+        // Este delegate ya no se usa directamente, pero lo mantenemos por compatibilidad
+    }
+
+    // MARK: - Helpers
+
+    private func findParentViewController() -> UIViewController? {
+        var responder: UIResponder? = self
+        while let nextResponder = responder?.next {
+            if let viewController = nextResponder as? UIViewController {
+                return viewController
+            }
+            responder = nextResponder
+        }
+        return nil
+    }
+}

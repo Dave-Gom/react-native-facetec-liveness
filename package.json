@@ -1,0 +1,15 @@
+{
+  "name": "react-native-facetec-liveness",
+  "version": "1.0.0",
+  "description": "React Native FaceTec 3D Liveness Button Component",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "react-native": "src/index.ts",
+  "source": "src/index.ts",
+  "author": "Dave Gomez",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  }
+}

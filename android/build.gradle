@@ -1,0 +1,73 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
+    }
+}
+
+apply plugin: 'com.android.library'
+
+def safeExtGet(prop, fallback) {
+    rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
+}
+
+android {
+    namespace "com.facetecliveness"
+    compileSdkVersion safeExtGet('compileSdkVersion', 34)
+
+    defaultConfig {
+        minSdkVersion safeExtGet('minSdkVersion', 24)
+        targetSdkVersion safeExtGet('targetSdkVersion', 34)
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+    maven {
+        // React Native local maven
+        url "$projectDir/../node_modules/react-native/android"
+    }
+    // FaceTec SDK - if you have a local AAR file
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+dependencies {
+    // React Native
+    implementation "com.facebook.react:react-native:+"
+
+    // FaceTec SDK
+    // Option 1: Local AAR file (put facetec-sdk-x.x.x.aar in android/libs/)
+    implementation(name: 'facetec-sdk-10.0.38', ext: 'aar')
+
+    // Option 2: If FaceTec provides a Maven repository
+    // implementation 'com.facetec:facetec-sdk:10.0.38'
+
+    // OkHttp for networking
+    implementation 'com.squareup.okhttp3:okhttp:4.11.0'
+
+    // AndroidX
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.core:core:1.12.0'
+}
