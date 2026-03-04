@@ -1,6 +1,6 @@
 #import <React/RCTViewManager.h>
 
-@interface RCT_EXTERN_MODULE(FaceTecLivenessViewManager, RCTViewManager)
+@interface RCT_EXTERN_MODULE(FaceTecLivenessButtonManager, RCTViewManager)
 
 RCT_EXPORT_VIEW_PROPERTY(onResponse, RCTBubblingEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(initializingText, NSString)

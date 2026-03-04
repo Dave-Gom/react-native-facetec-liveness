@@ -24,7 +24,6 @@ Pod::Spec.new do |s|
 
   # Build settings
   s.pod_target_xcconfig = {
-    "DEFINES_MODULE" => "YES",
-    "SWIFT_OBJC_BRIDGING_HEADER" => "$(PODS_TARGET_SRCROOT)/ios/FaceTecLiveness/FaceTecLiveness-Bridging-Header.h"
+    "DEFINES_MODULE" => "YES"
   }
 end

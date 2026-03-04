@@ -1,8 +1,14 @@
 import UIKit
 import FaceTecSDK
+import React
 
-@objc(FaceTecLivenessViewManager)
-class FaceTecLivenessViewManager: RCTViewManager {
+// MARK: - Protocol
+protocol FaceTecLivenessButtonDelegate: AnyObject {
+    func faceTecLivenessDidComplete(success: Bool, result: FaceTecSessionResult?)
+}
+
+@objc(FaceTecLivenessButtonManager)
+class FaceTecLivenessButtonManager: RCTViewManager {
 
     override func view() -> UIView! {
         let button = RNFaceTecLivenessButton(frame: .zero)
