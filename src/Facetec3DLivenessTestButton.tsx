@@ -30,6 +30,8 @@ export interface LivenessResponse {
   status: LivenessStatus;
   /** Mensaje descriptivo del resultado */
   message: string;
+  /** Response blob del servidor FaceTec (solo presente en operaciones exitosas) */
+  responseBlob?: string;
 }
 
 /**
@@ -128,13 +130,14 @@ export const Facetec3DLivenessTestButton: React.FC<
   const handleNativeResponse = (
     event: NativeSyntheticEvent<LivenessResponse>
   ) => {
-    const { success, status, message } = event.nativeEvent;
+    const { success, status, message, responseBlob } = event.nativeEvent;
 
     // Normalizar la respuesta
     const normalizedResponse: LivenessResponse = {
       success: success || status === 'SESSION_COMPLETED',
       status,
       message: message || status,
+      responseBlob,
     };
 
     onResponse(normalizedResponse);

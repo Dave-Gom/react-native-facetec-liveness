@@ -19,10 +19,13 @@ import FaceTecSDK
 class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSessionTaskDelegate {
 
     // Closure para comunicar el resultado al ViewController
-    var onComplete: ((FaceTecSessionResult) -> Void)?
+    var onComplete: ((FaceTecSessionResult, String?) -> Void)?
+
+    // Store the response blob
+    var lastResponseBlob: String?
 
     func onFaceTecExit(sessionResult: any FaceTecSessionResult) {
-        onComplete?(sessionResult)
+        onComplete?(sessionResult, lastResponseBlob)
     }
     
     // onSessionRequest is the core method called by the FaceTec SDK when a request needs to be processed by the FaceTec SDK.
@@ -41,7 +44,9 @@ class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSess
     // Please note that onResponseBlobReceived is a convenience function set up on this class,
     // so that this function can be called asynchronously once you receive the Response Blob.
     func onResponseBlobReceived(responseBlob: String, sessionRequestCallback: FaceTecSessionRequestProcessorCallback) {
-        print("Response geted")
+        print("Response received")
+        // Store the response blob to pass it to onComplete
+        self.lastResponseBlob = responseBlob
         sessionRequestCallback.processResponse(responseBlob);
     }
     

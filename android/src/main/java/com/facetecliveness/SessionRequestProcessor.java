@@ -20,6 +20,18 @@ import com.facetec.sdk.FaceTecSessionRequestProcessor;
 // - Adding additional asynchronous calls to this code is not allowed.  Only make your own additional asynchronous calls once the FaceTec UI is closed.
 // - Adding code that modifies any App UI (Yours or FaceTec's) is not allowed.  Only add code that modifies your own App UI once the FaceTec UI is closed.
 final public class SessionRequestProcessor implements FaceTecSessionRequestProcessor {
+
+    // Store the last response blob (static to be accessible from handleActivityResult)
+    private static String lastResponseBlob = null;
+
+    public static String getLastResponseBlob() {
+        return lastResponseBlob;
+    }
+
+    public static void clearLastResponseBlob() {
+        lastResponseBlob = null;
+    }
+
     // onSessionRequest is the core method called by the FaceTec SDK when a request needs to be processed by the FaceTec SDK.
     // Your code must retrieve the Session Request Blob and send to your FaceTec Server.
     // Your code must retrieve the Response Blob from FaceTec Server and call processResponse, passing in the Response Blob.
@@ -35,6 +47,8 @@ final public class SessionRequestProcessor implements FaceTecSessionRequestProce
     // Please note that onResponseBlobReceived is a convenience function set up on this class,
     // so that this function can be called asynchronously once you receive the Response Blob.
     public void onResponseBlobReceived(@NonNull String responseBlob, @NonNull Callback sessionRequestCallback) {
+        // Store the response blob for later retrieval
+        lastResponseBlob = responseBlob;
         sessionRequestCallback.processResponse(responseBlob);
     }
 

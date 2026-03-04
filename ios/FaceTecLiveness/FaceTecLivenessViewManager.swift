@@ -160,9 +160,9 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
 
         // Crear processor con callback
         let processor = SessionRequestProcessor()
-        processor.onComplete = { [weak self, weak parentVC] result in
+        processor.onComplete = { [weak self, weak parentVC] result, responseBlob in
             DispatchQueue.main.async {
-                self?.handleLivenessResult(result, parentVC: parentVC)
+                self?.handleLivenessResult(result, responseBlob: responseBlob, parentVC: parentVC)
             }
         }
 
@@ -179,7 +179,7 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
 
     // MARK: - Handle Result
 
-    private func handleLivenessResult(_ result: FaceTecSessionResult, parentVC: UIViewController?) {
+    private func handleLivenessResult(_ result: FaceTecSessionResult, responseBlob: String?, parentVC: UIViewController?) {
         let success = result.sessionStatus == .sessionCompleted
         var status: String
         var message: String
@@ -203,7 +203,7 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
         cleanup(parentVC: parentVC)
 
         // Emitir evento a React Native
-        emitResponse(success: success, status: status, message: message)
+        emitResponse(success: success, status: status, message: message, responseBlob: responseBlob)
     }
 
     private func cleanup(parentVC: UIViewController?) {
@@ -222,14 +222,20 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
 
     // MARK: - React Native Event Emission
 
-    private func emitResponse(success: Bool, status: String, message: String) {
+    private func emitResponse(success: Bool, status: String, message: String, responseBlob: String? = nil) {
         guard let onResponse = onResponse else { return }
 
-        onResponse([
+        var response: [String: Any] = [
             "success": success,
             "status": status,
             "message": message
-        ])
+        ]
+
+        if let blob = responseBlob {
+            response["responseBlob"] = blob
+        }
+
+        onResponse(response)
     }
 
     // MARK: - FaceTecLivenessButtonDelegate

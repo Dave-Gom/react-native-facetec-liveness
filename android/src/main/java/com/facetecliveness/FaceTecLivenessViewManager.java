@@ -46,20 +46,20 @@ public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLiven
 
         button.setResultListener(new RNFaceTecLivenessButton.LivenessResultListener() {
             @Override
-            public void onLivenessSuccess(FaceTecSessionResult result) {
-                sendEvent(button, "SESSION_COMPLETED", "Liveness completado exitosamente", true);
+            public void onLivenessSuccess(FaceTecSessionResult result, String responseBlob) {
+                sendEvent(button, "SESSION_COMPLETED", "Liveness completado exitosamente", true, responseBlob);
             }
 
             @Override
             public void onLivenessError(FaceTecSessionStatus status) {
                 String statusName = status != null ? status.name() : "UNKNOWN_ERROR";
                 String message = getMessageForStatus(status);
-                sendEvent(button, statusName, message, false);
+                sendEvent(button, statusName, message, false, null);
             }
 
             @Override
             public void onInitializationError(String error) {
-                sendEvent(button, "initError", error, false);
+                sendEvent(button, "initError", error, false, null);
             }
         });
 
@@ -81,17 +81,21 @@ public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLiven
         }
     }
 
-    private void sendEvent(RNFaceTecLivenessButton button, String status, String message, boolean success) {
+    private void sendEvent(RNFaceTecLivenessButton button, String status, String message, boolean success, @Nullable String responseBlob) {
         WritableMap event = Arguments.createMap();
         event.putBoolean("success", success);
         event.putString("status", status);
         event.putString("message", message);
 
+        if (responseBlob != null) {
+            event.putString("responseBlob", responseBlob);
+        }
+
         ThemedReactContext context = (ThemedReactContext) button.getContext();
         context.getJSModule(RCTEventEmitter.class)
                 .receiveEvent(button.getId(), "onResponse", event);
 
-        Log.d(TAG, "Event sent: success=" + success + ", status=" + status);
+        Log.d(TAG, "Event sent: success=" + success + ", status=" + status + ", hasBlob=" + (responseBlob != null));
     }
 
     @ReactProp(name = "initializingText")

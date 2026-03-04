@@ -48,7 +48,7 @@ public class RNFaceTecLivenessButton extends AppCompatButton {
     private static final int COLOR_WHITE = Color.WHITE;
 
     public interface LivenessResultListener {
-        void onLivenessSuccess(FaceTecSessionResult result);
+        void onLivenessSuccess(FaceTecSessionResult result, String responseBlob);
         void onLivenessError(FaceTecSessionStatus status);
         void onInitializationError(String error);
     }
@@ -229,16 +229,22 @@ public class RNFaceTecLivenessButton extends AppCompatButton {
                 FaceTecSessionStatus status = result.getStatus();
                 Log.d(TAG, "Resultado de liveness: " + status.name());
 
+                // Get the stored response blob
+                String responseBlob = SessionRequestProcessor.getLastResponseBlob();
+
                 if (status == FaceTecSessionStatus.SESSION_COMPLETED) {
                     Log.d(TAG, "Liveness check exitoso!");
                     if (resultListener != null) {
-                        resultListener.onLivenessSuccess(result);
+                        resultListener.onLivenessSuccess(result, responseBlob);
                     }
                 } else {
                     if (resultListener != null) {
                         resultListener.onLivenessError(status);
                     }
                 }
+
+                // Clear the stored blob after use
+                SessionRequestProcessor.clearLastResponseBlob();
             }
         }
     }
