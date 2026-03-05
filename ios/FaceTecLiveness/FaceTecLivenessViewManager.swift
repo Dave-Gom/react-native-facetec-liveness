@@ -50,7 +50,36 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
         }
     }
 
+    @objc var errorBackgroundColor: String? {
+        didSet {
+            if hasInitError, let color = parseColor(errorBackgroundColor) {
+                backgroundColor = color
+            }
+        }
+    }
+
     // MARK: - Properties
+
+    private var customErrorColor: UIColor? {
+        return parseColor(errorBackgroundColor)
+    }
+
+    private func parseColor(_ colorString: String?) -> UIColor? {
+        guard let colorString = colorString, !colorString.isEmpty else { return nil }
+        var hexString = colorString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if hexString.hasPrefix("#") {
+            hexString.removeFirst()
+        }
+        guard hexString.count == 6, let hexValue = UInt64(hexString, radix: 16) else { return nil }
+        let red = CGFloat((hexValue & 0xFF0000) >> 16) / 255.0
+        let green = CGFloat((hexValue & 0x00FF00) >> 8) / 255.0
+        let blue = CGFloat(hexValue & 0x0000FF) / 255.0
+        return UIColor(red: red, green: green, blue: blue, alpha: 1.0)
+    }
+
+    private func getErrorColor() -> UIColor {
+        return customErrorColor ?? .systemRed
+    }
 
     private var facetecSDKInstance: FaceTecSDKInstance?
     private var isSDKReady = false
@@ -115,7 +144,7 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
 
         DispatchQueue.main.async {
             self.setTitle("Permiso de camara denegado", for: .normal)
-            self.backgroundColor = .systemRed
+            self.backgroundColor = self.getErrorColor()
             self.isEnabled = false
         }
 
@@ -139,7 +168,7 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
 
         DispatchQueue.main.async {
             self.setTitle(self.readyText, for: .normal)
-            self.backgroundColor = .systemBlue
+            // Don't override backgroundColor - let React Native control it via style prop
             self.isEnabled = true
         }
     }
@@ -150,7 +179,7 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
 
         DispatchQueue.main.async {
             self.setTitle(self.errorText, for: .normal)
-            self.backgroundColor = .systemRed
+            self.backgroundColor = self.getErrorColor()
             self.isEnabled = false
         }
 

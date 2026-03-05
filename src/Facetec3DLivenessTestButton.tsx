@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   requireNativeComponent,
   ViewStyle,
@@ -6,6 +6,7 @@ import {
   NativeSyntheticEvent,
   Platform,
   StyleProp,
+  processColor,
 } from 'react-native';
 
 /**
@@ -116,6 +117,13 @@ export interface Facetec3DLivenessTestButtonProps {
    * @default "Error de inicializacion"
    */
   errorText?: string;
+
+  /**
+   * Estilos personalizados para el boton cuando hay un error
+   * Si no se proporciona, se usara el color rojo por defecto
+   * Solo se aplica backgroundColor
+   */
+  errorStyle?: StyleProp<ViewStyle>;
 }
 
 /**
@@ -143,6 +151,7 @@ interface NativeFaceTecButtonProps {
   initializingText?: string;
   readyText?: string;
   errorText?: string;
+  errorBackgroundColor?: string;
 }
 
 // Componente nativo
@@ -193,7 +202,15 @@ export const Facetec3DLivenessTestButton: React.FC<
   initializingText = 'Iniciando',
   readyText = 'Iniciar prueba de vida',
   errorText = 'Error de inicializacion',
+  errorStyle,
 }) => {
+  // Extract backgroundColor from errorStyle if provided
+  const errorBackgroundColor = useMemo(() => {
+    if (!errorStyle) return undefined;
+    const flatStyle = StyleSheet.flatten(errorStyle);
+    return flatStyle?.backgroundColor as string | undefined;
+  }, [errorStyle]);
+
   /**
    * Maneja el evento nativo y lo transforma al callback de JS
    * Los campos ya vienen convertidos a boolean desde el lado nativo
@@ -225,6 +242,7 @@ export const Facetec3DLivenessTestButton: React.FC<
       initializingText={initializingText}
       readyText={readyText}
       errorText={errorText}
+      errorBackgroundColor={errorBackgroundColor}
     />
   );
 };

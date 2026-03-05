@@ -51,6 +51,9 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     private static final int COLOR_RED = Color.parseColor("#FF3B30");
     private static final int COLOR_WHITE = Color.WHITE;
 
+    // Custom error color (null means use default COLOR_RED)
+    private Integer customErrorColor = null;
+
     public interface LivenessResultListener {
         void onLivenessSuccess(FaceTecSessionResult result, FaceTecServerResponse serverResponse);
         void onLivenessError(FaceTecSessionStatus status, FaceTecServerResponse serverResponse);
@@ -122,6 +125,27 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
         if (hasInitError) {
             setText(text);
         }
+    }
+
+    public void setErrorBackgroundColor(String color) {
+        if (color != null && !color.isEmpty()) {
+            try {
+                this.customErrorColor = Color.parseColor(color);
+                // If already in error state, update the background
+                if (hasInitError) {
+                    setButtonBackground(this.customErrorColor);
+                }
+            } catch (IllegalArgumentException e) {
+                // Invalid color format, ignore
+                this.customErrorColor = null;
+            }
+        } else {
+            this.customErrorColor = null;
+        }
+    }
+
+    private int getErrorColor() {
+        return customErrorColor != null ? customErrorColor : COLOR_RED;
     }
 
     private void setButtonBackground(int color) {
@@ -198,7 +222,7 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     private void handlePermissionDenied() {
         post(() -> {
             setText("Permiso de camara denegado");
-            setButtonBackground(COLOR_RED);
+            setButtonBackground(getErrorColor());
             setEnabled(false);
         });
         if (resultListener != null) {
@@ -230,7 +254,7 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
                             hasInitError = false;
                             post(() -> {
                                 setText(readyText);
-                                setButtonBackground(COLOR_BLUE);
+                                // Don't override backgroundColor - let React Native control it via style prop
                                 setEnabled(true);
                             });
                         }
@@ -241,7 +265,7 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
                             isInitialized = false;
                             post(() -> {
                                 setText(errorText);
-                                setButtonBackground(COLOR_RED);
+                                setButtonBackground(getErrorColor());
                                 setEnabled(false);
                             });
                             if (resultListener != null) {
@@ -254,7 +278,7 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
             hasInitError = true;
             post(() -> {
                 setText(errorText);
-                setButtonBackground(COLOR_RED);
+                setButtonBackground(getErrorColor());
                 setEnabled(false);
             });
             if (resultListener != null) {

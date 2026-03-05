@@ -184,6 +184,11 @@ public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLiven
         }
     }
 
+    @ReactProp(name = "errorBackgroundColor")
+    public void setErrorBackgroundColor(RNFaceTecLivenessButton view, @Nullable String color) {
+        view.setErrorBackgroundColor(color);
+    }
+
     @Override
     public Map<String, Object> getExportedCustomBubblingEventTypeConstants() {
         return MapBuilder.<String, Object>builder()
