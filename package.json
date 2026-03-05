@@ -1,7 +1,7 @@
 {
-  "name": "react-native-facetec-liveness",
+  "name": "react-native-facetec",
   "version": "1.0.0",
-  "description": "React Native FaceTec 3D Liveness Button Component",
+  "description": "React Native FaceTec SDK Integration",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "react-native": "src/index.ts",

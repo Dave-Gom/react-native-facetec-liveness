@@ -1,4 +1,4 @@
-package com.facetecliveness;
+package com.facetec;
 
 import androidx.annotation.NonNull;
 

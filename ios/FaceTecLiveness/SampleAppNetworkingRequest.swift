@@ -1,6 +1,23 @@
 import Foundation
 import FaceTecSDK
 
+// Structure to hold server response data
+struct FaceTecServerResponse {
+    let responseBlob: String
+    let success: Bool           // From "success" field (1 = true)
+    let didError: Bool          // From "didError" field (0 = false, no error)
+    let livenessProven: Bool    // From "result.livenessProven" (1 = liveness passed)
+    let rawData: [String: Any]  // Complete raw JSON response from FaceTec server
+
+    init(responseBlob: String, success: Bool = false, didError: Bool = true, livenessProven: Bool = false, rawData: [String: Any] = [:]) {
+        self.responseBlob = responseBlob
+        self.success = success
+        self.didError = didError
+        self.livenessProven = livenessProven
+        self.rawData = rawData
+    }
+}
+
 // Sample class for handling networking calls needed in order for FaceTec to function correctly.
 // In Your App, please use the networking constructs and protocols that meet your security requirements.
 //
@@ -90,12 +107,12 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
             // - Call a convenience function that either gets a valid Response Blob, or handles the error and returns null.
             // - Checks for null, indicating an error was detected and handled.
             //
-            let responseBlob: String = self.getResponseBlobOrHandleError(data: data)
-            
-            // If the responseBlob is empty, getResponseBlobOrHandleError will invoke onCatastrophicNetworkError()
-            if !responseBlob.isEmpty {
-                self.referencingProcessor.onResponseBlobReceived(responseBlob: responseBlob, sessionRequestCallback: self.sessionRequestCallback)
+            guard let serverResponse = self.getResponseBlobOrHandleError(data: data) else {
+                // getResponseBlobOrHandleError will invoke onCatastrophicNetworkError() if needed
+                return
             }
+
+            self.referencingProcessor.onResponseBlobReceived(serverResponse: serverResponse, sessionRequestCallback: self.sessionRequestCallback)
         })
     }
     
@@ -116,29 +133,76 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
         networkRequest.resume()
     }
     
-    func getResponseBlobOrHandleError(data: Data?) -> String {
+    func getResponseBlobOrHandleError(data: Data?) -> FaceTecServerResponse? {
         guard let data = data else {
-            // On catastrophic error, call the onCatastrophicNetworkError handler
-            // This should never be called except when a hard server error occurs. For example the user loses network connectivity.
-            // You may want to implement some sort of retry logic here
+            // No data received - network error
+            print("🔴 [FaceTec] No data received from server")
             logErrorAndCallAbortAndClose(errorDetail: "Exception raised while attempting HTTPS call.")
-            return ""
-        }
-        
-        guard let responseJSON = try? JSONSerialization.jsonObject(with: data, options: JSONSerialization.ReadingOptions.allowFragments) as! [String: AnyObject] else {
-            // Parsing the response into JSON failed --> You define your own API contracts
-            // with yourself and may choose to do something different here based on the
-            // error. Solid server-side code should ensure you don't get to this case.
-            logErrorAndCallAbortAndClose(errorDetail: "JSON Parsing Failed.  This indicates an issue in your own webservice or API contracts.");
-            return ""
+            return nil
         }
 
-        guard let responseBlob = responseJSON["responseBlob"] as? String else {
-            logErrorAndCallAbortAndClose(errorDetail: "API Response not successful.  Inspect network request and response for more details.");
-            return ""
+        guard let responseJSON = try? JSONSerialization.jsonObject(with: data, options: JSONSerialization.ReadingOptions.allowFragments) as? [String: AnyObject] else {
+            // Parsing the response into JSON failed
+            print("🔴 [FaceTec] JSON Parsing Failed")
+            logErrorAndCallAbortAndClose(errorDetail: "JSON Parsing Failed.  This indicates an issue in your own webservice or API contracts.");
+            return nil
         }
-        
-        return responseBlob
+
+        // Log the full server response for debugging
+        print("🔵 [FaceTec] ========== SERVER RESPONSE ==========")
+        if let jsonData = try? JSONSerialization.data(withJSONObject: responseJSON, options: .prettyPrinted),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print(jsonString)
+        } else {
+            print(responseJSON)
+        }
+        print("🔵 [FaceTec] =====================================")
+
+        // Convert responseJSON to [String: Any] for rawData - ALWAYS pass this
+        let rawData = responseJSON as? [String: Any] ?? [:]
+
+        // Extract key fields from server response (based on actual FaceTec response structure)
+        // success: 1 = true, 0 = false
+        let success = (responseJSON["success"] as? Int ?? 0) == 1
+        // didError: 0 = no error, 1 = error
+        let didError = (responseJSON["didError"] as? Int ?? 1) == 1
+        // result.livenessProven: 1 = liveness passed
+        let result = responseJSON["result"] as? [String: Any]
+        let livenessProven = (result?["livenessProven"] as? Int ?? 0) == 1
+        // responseBlob may or may not be present
+        let responseBlob = responseJSON["responseBlob"] as? String ?? ""
+
+        // Log processing result
+        if !didError && success {
+            print("✅ [FaceTec] success: true, didError: false")
+            print("✅ [FaceTec] livenessProven: \(livenessProven)")
+            if let ageGroup = result?["ageV2GroupEnumInt"] as? Int {
+                print("✅ [FaceTec] ageV2GroupEnumInt: \(ageGroup)")
+            }
+        } else {
+            print("⚠️ [FaceTec] success: \(success), didError: \(didError)")
+            // Log additional error info if available
+            if let errorMessage = responseJSON["errorMessage"] as? String {
+                print("⚠️ [FaceTec] errorMessage: \(errorMessage)")
+            }
+            if let reason = responseJSON["reason"] as? String {
+                print("⚠️ [FaceTec] reason: \(reason)")
+            }
+        }
+
+        if let serverInfo = responseJSON["serverInfo"] as? [String: Any] {
+            let mode = serverInfo["mode"] as? String ?? "unknown"
+            print("🔵 [FaceTec] Server mode: \(mode)")
+        }
+
+        // ALWAYS return the server response, even if responseBlob is empty
+        return FaceTecServerResponse(
+            responseBlob: responseBlob,
+            success: success,
+            didError: didError,
+            livenessProven: livenessProven,
+            rawData: rawData
+        )
     }
     
     func logErrorAndCallAbortAndClose(errorDetail: String) {

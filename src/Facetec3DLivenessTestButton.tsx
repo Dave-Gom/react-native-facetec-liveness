@@ -9,30 +9,79 @@ import {
 } from 'react-native';
 
 /**
- * Posibles estados del resultado de liveness
+ * Resultado del liveness del servidor
  */
-export type LivenessStatus =
-  | 'success'
-  | 'error'
-  | 'initError'
-  | 'permissionDenied'
-  | 'cancelled'
-  | 'SESSION_COMPLETED'
-  | 'USER_CANCELLED_FACE_SCAN'
-  | 'REQUEST_ABORTED';
+export interface LivenessResult {
+  /** Grupo de edad estimado */
+  ageV2GroupEnumInt?: number;
+  /** Indica si el liveness fue probado */
+  livenessProven?: boolean;
+}
 
 /**
- * Respuesta del proceso de liveness
+ * Informacion del servidor FaceTec
+ */
+export interface ServerInfo {
+  /** Version del SDK del servidor */
+  coreServerSDKVersion?: string;
+  /** Modo del servidor (Development Only, Production, etc.) */
+  mode?: string;
+  /** Aviso de seguridad */
+  notice?: string;
+}
+
+/**
+ * Datos adicionales de la sesion
+ */
+export interface AdditionalSessionData {
+  /** ID de la aplicacion */
+  appID?: string;
+  /** Modelo del dispositivo */
+  deviceModel?: string;
+  /** Version del SDK del dispositivo */
+  deviceSDKVersion?: string;
+  /** ID de instalacion */
+  installationID?: string;
+  /** Plataforma (ios, android) */
+  platform?: string;
+}
+
+/**
+ * Informacion de la llamada HTTP
+ */
+export interface HttpCallInfo {
+  /** Fecha de la llamada */
+  date?: string;
+  /** Epoch en segundos */
+  epochSecond?: number;
+  /** Path de la llamada */
+  path?: string;
+  /** Metodo HTTP */
+  requestMethod?: string;
+  /** ID de transaccion */
+  tid?: string;
+}
+
+/**
+ * Respuesta del proceso de liveness - Contiene los datos directos del servidor FaceTec
+ * Los campos con valores 1/0 son convertidos a booleanos
+ * Si hay error de red o no hay respuesta del servidor, los campos seran undefined
  */
 export interface LivenessResponse {
-  /** Indica si la verificacion fue exitosa */
-  success: boolean;
-  /** Estado del resultado */
-  status: LivenessStatus;
-  /** Mensaje descriptivo del resultado */
-  message: string;
-  /** Response blob del servidor FaceTec (solo presente en operaciones exitosas) */
+  /** Indica exito general del servidor */
+  success?: boolean;
+  /** Indica si hubo error en el servidor */
+  didError?: boolean;
+  /** Blob de respuesta encriptado */
   responseBlob?: string;
+  /** Resultado del liveness */
+  result?: LivenessResult;
+  /** Informacion del servidor */
+  serverInfo?: ServerInfo;
+  /** Datos adicionales de la sesion */
+  additionalSessionData?: AdditionalSessionData;
+  /** Informacion de la llamada HTTP */
+  httpCallInfo?: HttpCallInfo;
 }
 
 /**
@@ -41,7 +90,7 @@ export interface LivenessResponse {
 export interface Facetec3DLivenessTestButtonProps {
   /**
    * Callback que se ejecuta cuando el proceso de liveness termina
-   * @param response - Objeto con el resultado de la verificacion
+   * @param response - Objeto con los datos del servidor FaceTec (campos 1/0 convertidos a boolean)
    */
   onResponse: (response: LivenessResponse) => void;
 
@@ -70,10 +119,26 @@ export interface Facetec3DLivenessTestButtonProps {
 }
 
 /**
+ * Respuesta raw del nativo (antes de conversion)
+ */
+interface NativeLivenessResponse {
+  success?: boolean;
+  didError?: boolean;
+  responseBlob?: string;
+  result?: {
+    livenessProven?: boolean;
+    ageV2GroupEnumInt?: number;
+  };
+  serverInfo?: ServerInfo;
+  additionalSessionData?: AdditionalSessionData;
+  httpCallInfo?: HttpCallInfo;
+}
+
+/**
  * Props internas para el componente nativo
  */
 interface NativeFaceTecButtonProps {
-  onResponse: (event: NativeSyntheticEvent<LivenessResponse>) => void;
+  onResponse: (event: NativeSyntheticEvent<NativeLivenessResponse>) => void;
   style?: StyleProp<ViewStyle>;
   initializingText?: string;
   readyText?: string;
@@ -96,14 +161,18 @@ const NativeFaceTecButton =
  *
  * @example
  * ```tsx
- * import { Facetec3DLivenessTestButton } from 'react-native-facetec-liveness';
+ * import { Facetec3DLivenessTestButton } from 'react-native-facetec';
  *
  * const MyComponent = () => {
  *   const handleResponse = (response) => {
- *     if (response.success) {
- *       console.log('Verificacion exitosa!');
+ *     if (response.success && !response.didError && response.result?.livenessProven) {
+ *       console.log('Liveness verificado exitosamente!');
+ *     } else if (response.didError) {
+ *       console.log('Error en el servidor');
+ *     } else if (response.success === undefined) {
+ *       console.log('Sin respuesta del servidor (error de red o cancelado)');
  *     } else {
- *       console.log('Error:', response.message);
+ *       console.log('Liveness no verificado');
  *     }
  *   };
  *
@@ -127,21 +196,26 @@ export const Facetec3DLivenessTestButton: React.FC<
 }) => {
   /**
    * Maneja el evento nativo y lo transforma al callback de JS
+   * Los campos ya vienen convertidos a boolean desde el lado nativo
    */
   const handleNativeResponse = (
-    event: NativeSyntheticEvent<LivenessResponse>
+    event: NativeSyntheticEvent<NativeLivenessResponse>
   ) => {
-    const { success, status, message, responseBlob } = event.nativeEvent;
+    const nativeEvent = event.nativeEvent;
 
-    // Normalizar la respuesta
-    const normalizedResponse: LivenessResponse = {
-      success: success || status === 'SESSION_COMPLETED',
-      status,
-      message: message || status,
-      responseBlob,
+    // Pasar directamente los datos del servidor FaceTec
+    // Los campos 1/0 ya estan convertidos a boolean en el lado nativo
+    const response: LivenessResponse = {
+      success: nativeEvent.success,
+      didError: nativeEvent.didError,
+      responseBlob: nativeEvent.responseBlob,
+      result: nativeEvent.result,
+      serverInfo: nativeEvent.serverInfo,
+      additionalSessionData: nativeEvent.additionalSessionData,
+      httpCallInfo: nativeEvent.httpCallInfo,
     };
 
-    onResponse(normalizedResponse);
+    onResponse(response);
   };
 
   return (

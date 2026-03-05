@@ -1,4 +1,4 @@
-package com.facetecliveness;
+package com.facetec;
 
 import androidx.annotation.NonNull;
 import com.facetec.sdk.FaceTecSessionRequestProcessor;
@@ -21,15 +21,15 @@ import com.facetec.sdk.FaceTecSessionRequestProcessor;
 // - Adding code that modifies any App UI (Yours or FaceTec's) is not allowed.  Only add code that modifies your own App UI once the FaceTec UI is closed.
 final public class SessionRequestProcessor implements FaceTecSessionRequestProcessor {
 
-    // Store the last response blob (static to be accessible from handleActivityResult)
-    private static String lastResponseBlob = null;
+    // Store the last server response (static to be accessible from handleActivityResult)
+    private static FaceTecServerResponse lastServerResponse = null;
 
-    public static String getLastResponseBlob() {
-        return lastResponseBlob;
+    public static FaceTecServerResponse getLastServerResponse() {
+        return lastServerResponse;
     }
 
-    public static void clearLastResponseBlob() {
-        lastResponseBlob = null;
+    public static void clearLastServerResponse() {
+        lastServerResponse = null;
     }
 
     // onSessionRequest is the core method called by the FaceTec SDK when a request needs to be processed by the FaceTec SDK.
@@ -46,10 +46,10 @@ final public class SessionRequestProcessor implements FaceTecSessionRequestProce
     // When the Response Blob is received, call processResponse with it.
     // Please note that onResponseBlobReceived is a convenience function set up on this class,
     // so that this function can be called asynchronously once you receive the Response Blob.
-    public void onResponseBlobReceived(@NonNull String responseBlob, @NonNull Callback sessionRequestCallback) {
-        // Store the response blob for later retrieval
-        lastResponseBlob = responseBlob;
-        sessionRequestCallback.processResponse(responseBlob);
+    public void onResponseBlobReceived(@NonNull FaceTecServerResponse serverResponse, @NonNull Callback sessionRequestCallback) {
+        // Store the server response for later retrieval
+        lastServerResponse = serverResponse;
+        sessionRequestCallback.processResponse(serverResponse.getResponseBlob());
     }
 
     // When upload progress is received from your webservice, call updateProgress to update the Progress Bar state.

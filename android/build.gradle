@@ -16,7 +16,7 @@ def safeExtGet(prop, fallback) {
 }
 
 android {
-    namespace "com.facetecliveness"
+    namespace "com.facetec"
     compileSdkVersion safeExtGet('compileSdkVersion', 34)
 
     defaultConfig {

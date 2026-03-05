@@ -1,2 +1,4 @@
 android/libs
 ios/FaceTecSDK.xcframework
+.DS_Store
+**/.DS_Store

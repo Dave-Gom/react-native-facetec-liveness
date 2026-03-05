@@ -4,7 +4,7 @@
 // - Adding additional logic to this code is not allowed.  Do not add any additional logic outside of what is demonstrated in this Sample.
 // - Adding additional asynchronous calls to this code is not allowed.  Only make your own additional asynchronous calls once the FaceTec UI is closed.
 // - Adding code that modifies any App UI (Yours or FaceTec's) is not allowed.  Only add code that modifies your own App UI once the FaceTec UI is closed.
-package com.facetecliveness;
+package com.facetec;
 
 import androidx.annotation.NonNull;
 

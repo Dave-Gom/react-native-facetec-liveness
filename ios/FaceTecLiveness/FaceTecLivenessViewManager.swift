@@ -3,11 +3,6 @@ import FaceTecSDK
 import React
 import AVFoundation
 
-// MARK: - Protocol
-protocol FaceTecLivenessButtonDelegate: AnyObject {
-    func faceTecLivenessDidComplete(success: Bool, result: FaceTecSessionResult?)
-}
-
 @objc(FaceTecLivenessButtonManager)
 class FaceTecLivenessButtonManager: RCTViewManager {
 
@@ -23,7 +18,7 @@ class FaceTecLivenessButtonManager: RCTViewManager {
 
 // MARK: - RNFaceTecLivenessButton (Wrapper para React Native)
 
-class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLivenessButtonDelegate {
+class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
 
     // MARK: - React Native Event Callback
 
@@ -124,7 +119,7 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
             self.isEnabled = false
         }
 
-        emitResponse(success: false, status: "permissionDenied", message: "Permiso de camara denegado")
+        emitServerResponse(serverResponse: nil)
     }
 
     // MARK: - FaceTec Initialization
@@ -159,9 +154,8 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
             self.isEnabled = false
         }
 
-        // Emit error event to React Native
-        let errorMessage = FaceTec.sdk.description(for: error)
-        emitResponse(success: false, status: "initError", message: errorMessage)
+        // Emit error event to React Native (no server response available)
+        emitServerResponse(serverResponse: nil)
     }
 
     // MARK: - Button Action
@@ -172,7 +166,7 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
         }
 
         guard let parentVC = findParentViewController() else {
-            emitResponse(success: false, status: "error", message: "No se encontro el ViewController padre")
+            emitServerResponse(serverResponse: nil)
             return
         }
 
@@ -197,9 +191,9 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
 
         // Crear processor con callback
         let processor = SessionRequestProcessor()
-        processor.onComplete = { [weak self, weak parentVC] result, responseBlob in
+        processor.onComplete = { [weak self, weak parentVC] result, serverResponse in
             DispatchQueue.main.async {
-                self?.handleLivenessResult(result, responseBlob: responseBlob, parentVC: parentVC)
+                self?.handleLivenessResult(result, serverResponse: serverResponse, parentVC: parentVC)
             }
         }
 
@@ -216,31 +210,12 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
 
     // MARK: - Handle Result
 
-    private func handleLivenessResult(_ result: FaceTecSessionResult, responseBlob: String?, parentVC: UIViewController?) {
-        let success = result.sessionStatus == .sessionCompleted
-        var status: String
-        var message: String
-
-        switch result.sessionStatus {
-        case .sessionCompleted:
-            status = "SESSION_COMPLETED"
-            message = "Liveness completado exitosamente"
-        case .userCancelledFaceScan:
-            status = "USER_CANCELLED_FACE_SCAN"
-            message = "Usuario cancelo el proceso"
-        case .requestAborted:
-            status = "REQUEST_ABORTED"
-            message = "Request abortada"
-        default:
-            status = "error"
-            message = "Resultado: \(result.sessionStatus)"
-        }
-
+    private func handleLivenessResult(_ result: FaceTecSessionResult, serverResponse: FaceTecServerResponse?, parentVC: UIViewController?) {
         // Limpiar UI
         cleanup(parentVC: parentVC)
 
-        // Emitir evento a React Native
-        emitResponse(success: success, status: status, message: message, responseBlob: responseBlob)
+        // Emitir evento a React Native con los datos del servidor FaceTec
+        emitServerResponse(serverResponse: serverResponse)
     }
 
     private func cleanup(parentVC: UIViewController?) {
@@ -259,26 +234,53 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback, FaceTecLiven
 
     // MARK: - React Native Event Emission
 
-    private func emitResponse(success: Bool, status: String, message: String, responseBlob: String? = nil) {
+    /// Emite la respuesta del servidor FaceTec a React Native
+    /// Los campos con valores 1/0 son convertidos a booleanos
+    /// Si no hay respuesta del servidor, los campos seran undefined (no incluidos)
+    private func emitServerResponse(serverResponse: FaceTecServerResponse?) {
         guard let onResponse = onResponse else { return }
 
-        var response: [String: Any] = [
-            "success": success,
-            "status": status,
-            "message": message
-        ]
+        var response: [String: Any] = [:]
 
-        if let blob = responseBlob {
-            response["responseBlob"] = blob
+        if let serverResponse = serverResponse {
+            // Campos principales convertidos a boolean
+            response["success"] = serverResponse.success
+            response["didError"] = serverResponse.didError
+            response["responseBlob"] = serverResponse.responseBlob
+
+            // Extraer y convertir result
+            if let rawResult = serverResponse.rawData["result"] as? [String: Any] {
+                var result: [String: Any] = [:]
+                // Convertir livenessProven de 1/0 a boolean
+                if let livenessProven = rawResult["livenessProven"] as? Int {
+                    result["livenessProven"] = livenessProven == 1
+                }
+                if let ageGroup = rawResult["ageV2GroupEnumInt"] as? Int {
+                    result["ageV2GroupEnumInt"] = ageGroup
+                }
+                if !result.isEmpty {
+                    response["result"] = result
+                }
+            }
+
+            // Pasar serverInfo tal cual
+            if let serverInfo = serverResponse.rawData["serverInfo"] as? [String: Any] {
+                response["serverInfo"] = serverInfo
+            }
+
+            // Pasar additionalSessionData tal cual
+            if let additionalSessionData = serverResponse.rawData["additionalSessionData"] as? [String: Any] {
+                response["additionalSessionData"] = additionalSessionData
+            }
+
+            // Pasar httpCallInfo tal cual
+            if let httpCallInfo = serverResponse.rawData["httpCallInfo"] as? [String: Any] {
+                response["httpCallInfo"] = httpCallInfo
+            }
         }
+        // Si no hay serverResponse, response queda vacio (todos los campos undefined)
 
         onResponse(response)
-    }
-
-    // MARK: - FaceTecLivenessButtonDelegate
-
-    func faceTecLivenessDidComplete(success: Bool, result: FaceTecSessionResult?) {
-        // Este delegate ya no se usa directamente, pero lo mantenemos por compatibilidad
     }
 
     // MARK: - Helpers

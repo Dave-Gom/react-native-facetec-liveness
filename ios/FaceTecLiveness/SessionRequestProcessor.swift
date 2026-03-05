@@ -19,13 +19,13 @@ import FaceTecSDK
 class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSessionTaskDelegate {
 
     // Closure para comunicar el resultado al ViewController
-    var onComplete: ((FaceTecSessionResult, String?) -> Void)?
+    var onComplete: ((FaceTecSessionResult, FaceTecServerResponse?) -> Void)?
 
-    // Store the response blob
-    var lastResponseBlob: String?
+    // Store the server response
+    var lastServerResponse: FaceTecServerResponse?
 
     func onFaceTecExit(sessionResult: any FaceTecSessionResult) {
-        onComplete?(sessionResult, lastResponseBlob)
+        onComplete?(sessionResult, lastServerResponse)
     }
     
     // onSessionRequest is the core method called by the FaceTec SDK when a request needs to be processed by the FaceTec SDK.
@@ -41,10 +41,10 @@ class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSess
     // When the Response Blob is received, call processResponse with it.
     // Please note that onResponseBlobReceived is a convenience function set up on this class,
     // so that this function can be called asynchronously once you receive the Response Blob.
-    func onResponseBlobReceived(responseBlob: String, sessionRequestCallback: FaceTecSessionRequestProcessorCallback) {
-        // Store the response blob to pass it to onComplete
-        self.lastResponseBlob = responseBlob
-        sessionRequestCallback.processResponse(responseBlob)
+    func onResponseBlobReceived(serverResponse: FaceTecServerResponse, sessionRequestCallback: FaceTecSessionRequestProcessorCallback) {
+        // Store the server response to pass it to onComplete
+        self.lastServerResponse = serverResponse
+        sessionRequestCallback.processResponse(serverResponse.responseBlob)
     }
     
     // When upload progress is received from your webservice, call updateProgress to update the Progress Bar state.

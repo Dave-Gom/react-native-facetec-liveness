@@ -1,4 +1,4 @@
-package com.facetecliveness;
+package com.facetec;
 
 import android.Manifest;
 import android.app.Activity;
@@ -52,8 +52,8 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     private static final int COLOR_WHITE = Color.WHITE;
 
     public interface LivenessResultListener {
-        void onLivenessSuccess(FaceTecSessionResult result, String responseBlob);
-        void onLivenessError(FaceTecSessionStatus status);
+        void onLivenessSuccess(FaceTecSessionResult result, FaceTecServerResponse serverResponse);
+        void onLivenessError(FaceTecSessionStatus status, FaceTecServerResponse serverResponse);
         void onInitializationError(String error);
     }
 
@@ -334,20 +334,28 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
 
         FaceTecSessionStatus status = result.getStatus();
 
-        // Get the stored response blob
-        String responseBlob = SessionRequestProcessor.getLastResponseBlob();
+        // Get the stored server response
+        FaceTecServerResponse serverResponse = SessionRequestProcessor.getLastServerResponse();
 
         if (status == FaceTecSessionStatus.SESSION_COMPLETED) {
+            // Session completed - check server response for actual liveness result
+            // Use livenessProven, success, and !didError to determine if liveness passed
             if (resultListener != null) {
-                resultListener.onLivenessSuccess(result, responseBlob);
+                if (serverResponse != null && serverResponse.isLivenessProven() && serverResponse.isSuccess() && !serverResponse.isDidError()) {
+                    resultListener.onLivenessSuccess(result, serverResponse);
+                } else {
+                    // Session completed but liveness check failed
+                    resultListener.onLivenessError(status, serverResponse);
+                }
             }
         } else {
+            // Session did not complete (user cancelled, error, etc.)
             if (resultListener != null) {
-                resultListener.onLivenessError(status);
+                resultListener.onLivenessError(status, serverResponse);
             }
         }
 
-        // Clear the stored blob after use
-        SessionRequestProcessor.clearLastResponseBlob();
+        // Clear the stored response after use
+        SessionRequestProcessor.clearLastServerResponse();
     }
 }

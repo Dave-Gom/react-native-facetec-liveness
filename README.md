@@ -1,4 +1,4 @@
-# react-native-facetec-liveness
+# react-native-facetec
 
 React Native component for FaceTec 3D Liveness verification.
 
@@ -8,12 +8,12 @@ This module is designed to be used as a local native module within your React Na
 
 ### Step 1: Copy the module
 
-Copy the `react-native-facetec-liveness` folder to your project:
+Copy the `react-native-facetec` folder to your project:
 
 ```
 your-react-native-project/
 ├── native_modules/
-│   └── react-native-facetec-liveness/   # Copy here
+│   └── react-native-facetec/   # Copy here
 ├── android/
 ├── ios/
 ├── src/
@@ -27,7 +27,7 @@ Add the local module to your `package.json` dependencies:
 ```json
 {
   "dependencies": {
-    "react-native-facetec-liveness": "file:./native_modules/react-native-facetec-liveness"
+    "react-native-facetec": "file:./native_modules/react-native-facetec"
   }
 }
 ```
@@ -51,7 +51,7 @@ In `ios/Podfile`, add inside the main target:
 ```ruby
 target 'YourApp' do
   # ... other pods
-  pod 'react-native-facetec-liveness', :path => '../native_modules/react-native-facetec-liveness'
+  pod 'react-native-facetec', :path => '../native_modules/react-native-facetec'
 end
 ```
 
@@ -77,8 +77,8 @@ cd ios && pod install && cd ..
 In `android/settings.gradle`, add at the beginning:
 
 ```gradle
-include ':react-native-facetec-liveness'
-project(':react-native-facetec-liveness').projectDir = new File(rootProject.projectDir, '../native_modules/react-native-facetec-liveness/android')
+include ':react-native-facetec'
+project(':react-native-facetec').projectDir = new File(rootProject.projectDir, '../native_modules/react-native-facetec/android')
 ```
 
 ### 2. Add dependency to app/build.gradle
@@ -88,7 +88,7 @@ In `android/app/build.gradle`, add in the `dependencies` block:
 ```gradle
 dependencies {
     // ... other dependencies
-    implementation project(':react-native-facetec-liveness')
+    implementation project(':react-native-facetec')
 }
 ```
 
@@ -100,7 +100,7 @@ In `android/app/build.gradle`, add at the end of the file (after the `apply from
 repositories {
     // FaceTec SDK AAR
     flatDir {
-        dirs '../../native_modules/react-native-facetec-liveness/android/libs'
+        dirs '../../native_modules/react-native-facetec/android/libs'
     }
 }
 ```
@@ -121,7 +121,7 @@ These are already included in the module, but ensure your app has:
 ```tsx
 import React from 'react';
 import { View, Alert } from 'react-native';
-import { Facetec3DLivenessTestButton } from 'react-native-facetec-liveness';
+import { Facetec3DLivenessTestButton } from 'react-native-facetec';
 
 const MyComponent = () => {
   const handleResponse = (response) => {
@@ -202,7 +202,7 @@ type LivenessStatus =
 To change the FaceTec API configuration, modify:
 
 - **iOS**: `ios/FaceTecLiveness/Config.swift`
-- **Android**: `android/src/main/java/com/facetecliveness/Config.java`
+- **Android**: `android/src/main/java/com/facetec/Config.java`
 
 Update these values with your production credentials:
 
@@ -242,7 +242,7 @@ Always use `yarn install` instead of `npm install` to respect the existing `yarn
 ## Project Structure
 
 ```
-react-native-facetec-liveness/
+react-native-facetec/
 ├── src/
 │   ├── index.ts
 │   └── Facetec3DLivenessTestButton.tsx
@@ -257,7 +257,7 @@ react-native-facetec-liveness/
 ├── android/
 │   ├── libs/
 │   │   └── facetec-sdk-10.0.38.aar
-│   └── src/main/java/com/facetecliveness/
+│   └── src/main/java/com/facetec/
 │       ├── FaceTecLivenessViewManager.java
 │       ├── FaceTecLivenessPackage.java
 │       ├── FaceTecLivenessModule.java
@@ -266,7 +266,7 @@ react-native-facetec-liveness/
 │       ├── SessionRequestProcessor.java
 │       └── SampleAppNetworkingRequest.java
 ├── package.json
-├── react-native-facetec-liveness.podspec
+├── react-native-facetec.podspec
 └── README.md
 ```
 
