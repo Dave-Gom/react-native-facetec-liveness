@@ -28,10 +28,13 @@ struct FaceTecServerResponse {
 class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
     var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 
+    // Keep reference to current task for cancellation on background expiration
+    private var currentTask: URLSessionDataTask?
+
     let referencingProcessor: SessionRequestProcessor
     let sessionRequestCallback: FaceTecSessionRequestProcessorCallback
     var errorCount: Int = 0
-    
+
     static let MAX_ERROR_RETRIES = 2
     
     init(referencingProcessor: SessionRequestProcessor, sessionRequestCallback: FaceTecSessionRequestProcessorCallback) {
@@ -64,14 +67,16 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
         var request = URLRequest(url: NSURL(string: Config.YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT)! as URL)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        
+
         // Developer Note: This is ONLY needed for calls to the FaceTec Testing API.
         // You should remove this when using Your App connected to Your Webservice + FaceTec Server
         request.addValue(Config.DeviceKeyIdentifier, forHTTPHeaderField: "X-Device-Key")
 
+        #if DEBUG
         // Developer Note: This is ONLY needed for calls to the FaceTec Testing API.
         // You should remove this when using Your App connected to Your Webservice + FaceTec Server
         request.addValue(FaceTec.sdk.getTestingAPIHeader(), forHTTPHeaderField: "X-Testing-API-Header")
+        #endif
 
         request.httpBody = try! JSONSerialization.data(withJSONObject: sessionRequestCallPayload, options: JSONSerialization.WritingOptions(rawValue: 0))
         
@@ -83,7 +88,13 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
         
         // Begin a background task so iOS gives the app extra time to finish this network call if the app is
         // put to background
-        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "SampleAppNetworkingRequest") {
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "SampleAppNetworkingRequest") { [weak self] in
+            guard let self = self else { return }
+            // Cancel the current network request if background task expires
+            self.currentTask?.cancel()
+            self.currentTask = nil
+            // Notify about the catastrophic error due to timeout
+            self.referencingProcessor.onCatastrophicNetworkError(sessionRequestCallback: self.sessionRequestCallback)
             UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
             self.backgroundTaskID = .invalid
         }
@@ -94,9 +105,12 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
         // - Unless there is a networking error, or an error in your webservice or infrastructure, the Response Blob is retrieved and passed back into processResponse.
         // - For error cases, abortOnCatastrophicError is called as this would indicate a networking issue on the User device or network, or an error in Your Webservice.
         //
-        doSessionRequestWithRetry(session: session, request: request, completionHandler: { data, response, error in
+        doSessionRequestWithRetry(session: session, request: request, completionHandler: { [weak self] data, response, error in
+            guard let self = self else { return }
+
             // Ensure that the background task is ended when the session finishes
             defer {
+                self.currentTask = nil
                 UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
                 self.backgroundTaskID = .invalid
             }
@@ -117,7 +131,12 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
     }
     
     private func doSessionRequestWithRetry(session: URLSession, request: URLRequest, completionHandler: @escaping (Data?, URLResponse?, (any Error)?) -> Void) {
-        let networkRequest = session.dataTask(with: request as URLRequest, completionHandler: { data, response, error in
+        let networkRequest = session.dataTask(with: request as URLRequest, completionHandler: { [weak self] data, response, error in
+            guard let self = self else { return }
+
+            // Clear task reference on completion
+            self.currentTask = nil
+
             if (error != nil && self.errorCount < SampleAppNetworkingRequest.MAX_ERROR_RETRIES) {
                 self.errorCount += 1;
                 // After a delay, try again
@@ -129,7 +148,9 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
                 completionHandler(data, response, error)
             }
         })
-        
+
+        // Store reference to allow cancellation
+        currentTask = networkRequest
         networkRequest.resume()
     }
     

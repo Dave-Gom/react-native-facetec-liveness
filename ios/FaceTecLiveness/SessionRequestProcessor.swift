@@ -25,7 +25,10 @@ class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSess
     var lastServerResponse: FaceTecServerResponse?
 
     func onFaceTecExit(sessionResult: any FaceTecSessionResult) {
-        onComplete?(sessionResult, lastServerResponse)
+        // Pass the response and then clear to prevent memory leak
+        let response = lastServerResponse
+        lastServerResponse = nil  // Clear reference after use
+        onComplete?(sessionResult, response)
     }
     
     // onSessionRequest is the core method called by the FaceTec SDK when a request needs to be processed by the FaceTec SDK.

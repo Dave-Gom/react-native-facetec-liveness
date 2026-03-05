@@ -22,14 +22,26 @@ import com.facetec.sdk.FaceTecSessionRequestProcessor;
 final public class SessionRequestProcessor implements FaceTecSessionRequestProcessor {
 
     // Store the last server response (static to be accessible from handleActivityResult)
-    private static FaceTecServerResponse lastServerResponse = null;
+    // Using volatile + synchronized for thread-safety across multiple sessions
+    private static volatile FaceTecServerResponse lastServerResponse = null;
+    private static final Object lock = new Object();
 
     public static FaceTecServerResponse getLastServerResponse() {
-        return lastServerResponse;
+        synchronized (lock) {
+            return lastServerResponse;
+        }
     }
 
     public static void clearLastServerResponse() {
-        lastServerResponse = null;
+        synchronized (lock) {
+            lastServerResponse = null;
+        }
+    }
+
+    private static void setLastServerResponse(FaceTecServerResponse response) {
+        synchronized (lock) {
+            lastServerResponse = response;
+        }
     }
 
     // onSessionRequest is the core method called by the FaceTec SDK when a request needs to be processed by the FaceTec SDK.
@@ -47,8 +59,8 @@ final public class SessionRequestProcessor implements FaceTecSessionRequestProce
     // Please note that onResponseBlobReceived is a convenience function set up on this class,
     // so that this function can be called asynchronously once you receive the Response Blob.
     public void onResponseBlobReceived(@NonNull FaceTecServerResponse serverResponse, @NonNull Callback sessionRequestCallback) {
-        // Store the server response for later retrieval
-        lastServerResponse = serverResponse;
+        // Store the server response for later retrieval (thread-safe)
+        setLastServerResponse(serverResponse);
         sessionRequestCallback.processResponse(serverResponse.getResponseBlob());
     }
 

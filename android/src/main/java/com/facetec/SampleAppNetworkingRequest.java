@@ -19,6 +19,8 @@ import okhttp3.MediaType;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 
+import com.facetec.BuildConfig;
+
 // Sample class for handling networking calls needed in order for FaceTec to function correctly.
 // In Your App, please use the networking constructs and protocols that meet your security requirements.
 //
@@ -83,17 +85,21 @@ public class SampleAppNetworkingRequest {
         // - This code should never call your server directly. It should contact middleware you have created that forwards requests to your server.
         //
 
-        Request request = new Request.Builder()
+        Request.Builder requestBuilder = new Request.Builder()
                 .url(Config.YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT)
                 .header("Content-Type", "application/json")
 
                 // Developer Note: This is ONLY needed for calls to the FaceTec Testing API.
                 // You should remove this when using Your App connected to Your Webservice + FaceTec Server
-                .header("X-Device-Key", Config.DeviceKeyIdentifier)
+                .header("X-Device-Key", Config.DeviceKeyIdentifier);
 
-                // Developer Note: This is ONLY needed for calls to the FaceTec Testing API.
-                // You should remove this when using Your App connected to Your Webservice + FaceTec Server
-                .header( "X-Testing-API-Header", FaceTecSDK.getTestingAPIHeader())
+        // Developer Note: This is ONLY needed for calls to the FaceTec Testing API.
+        // You should remove this when using Your App connected to Your Webservice + FaceTec Server
+        if (BuildConfig.DEBUG) {
+            requestBuilder.header("X-Testing-API-Header", FaceTecSDK.getTestingAPIHeader());
+        }
+
+        Request request = requestBuilder
 
                 // Developer Note: With the Sample Networking library in this Sample App,
                 // this code demonstrates getting the networking request progress and making
