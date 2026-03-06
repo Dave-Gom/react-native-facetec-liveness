@@ -15,7 +15,8 @@ extension UIColor {
         let a, r, g, b: UInt64
         switch hex.count {
         case 3:
-            (a, r, g, b) = (255, int >> 8, int >> 4 & 0xF, int & 0xF)
+            // Expand shorthand: F0A -> FF00AA (multiply each digit by 17 to duplicate it)
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
         case 6:
             (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
         case 8:
@@ -38,15 +39,15 @@ class Config {
     // -------------------------------------
     // REQUIRED
     // The URL to call to process FaceTec SDK Sessions.
-    // In Production, you likely will handle network requests elsewhere and without the use of this variable.
-    // See https://dev.facetec.com/security-best-practices#server-rest-endpoint-security for more information.
-
-    // Developer Note: In Your Production Application, networking requests from Your App will call Your Webservice.
-    // Calling the FaceTec Server Webservice directly from Your App is not allowed (except for initial testing).
-    // Please see the FaceTec Architecture Diagram here more information:  https://dev.facetec.com/configuration-options#zoom-architecture-and-data-flow
     //
-    // This field is auto-populated by the FaceTec SDK Configuration Wizard.
-    static let YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT = "https://api.facetec.com/api/v4/biometrics/process-request"
+    // IMPORTANT: Configure this value before using the SDK.
+    // - For testing: Use FaceTec's testing API "https://api.facetec.com/api/v4/biometrics/process-request"
+    // - For production: Use YOUR OWN backend server that proxies requests to FaceTec.
+    //   Calling FaceTec directly from the app is NOT allowed in production.
+    //
+    // See https://dev.facetec.com/security-best-practices#server-rest-endpoint-security
+    // See https://dev.facetec.com/configuration-options#zoom-architecture-and-data-flow
+    static let YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT = ""
     
     // -------------------------------------
     // This app can modify the customization to demonstrate different look/feel preferences

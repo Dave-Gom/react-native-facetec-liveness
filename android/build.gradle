@@ -1,14 +1,3 @@
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-
-    dependencies {
-        classpath 'com.android.tools.build:gradle:8.1.0'
-    }
-}
-
 apply plugin: 'com.android.library'
 
 def safeExtGet(prop, fallback) {
@@ -45,7 +34,7 @@ repositories {
     mavenCentral()
     maven {
         // React Native local maven
-        url "$projectDir/../node_modules/react-native/android"
+        url "$rootDir/../node_modules/react-native/android"
     }
     // FaceTec SDK - if you have a local AAR file
     flatDir {
@@ -54,8 +43,8 @@ repositories {
 }
 
 dependencies {
-    // React Native
-    implementation "com.facebook.react:react-native:+"
+    // React Native (version managed by React Native Gradle Plugin)
+    compileOnly "com.facebook.react:react-android"
 
     // FaceTec SDK
     // Option 1: Local AAR file (put facetec-sdk-x.x.x.aar in android/libs/)

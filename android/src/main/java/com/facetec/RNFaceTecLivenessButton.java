@@ -44,6 +44,7 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     private String initializingText = "Iniciando";
     private String readyText = "Iniciar prueba de vida";
     private String errorText = "Error de inicializacion";
+    private String permissionDeniedText = "Permiso de camara denegado";
 
     // Colors
     private static final int COLOR_GRAY = Color.parseColor("#808080");
@@ -51,8 +52,12 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     private static final int COLOR_RED = Color.parseColor("#FF3B30");
     private static final int COLOR_WHITE = Color.WHITE;
 
-    // Custom error color (null means use default COLOR_RED)
+    // Custom colors (null means use default)
     private Integer customErrorColor = null;
+    private Integer customInitializingColor = null;
+
+    // State flags
+    private boolean hasPermissionError = false;
 
     public interface LivenessResultListener {
         void onLivenessSuccess(FaceTecSessionResult result, FaceTecServerResponse serverResponse);
@@ -84,8 +89,8 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
         setGravity(Gravity.CENTER);
         setEnabled(false);
 
-        // Set rounded background
-        setButtonBackground(COLOR_GRAY);
+        // Set rounded background (use custom color if available)
+        setButtonBackground(customInitializingColor != null ? customInitializingColor : COLOR_GRAY);
 
         // Set padding
         int paddingHorizontal = dpToPx(24);
@@ -122,8 +127,32 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
 
     public void setErrorText(String text) {
         this.errorText = text;
-        if (hasInitError) {
+        if (hasInitError && !hasPermissionError) {
             setText(text);
+        }
+    }
+
+    public void setPermissionDeniedText(String text) {
+        this.permissionDeniedText = text;
+        if (hasPermissionError) {
+            setText(text);
+        }
+    }
+
+    public void setInitializingBackgroundColor(String color) {
+        if (color != null && !color.isEmpty()) {
+            try {
+                this.customInitializingColor = Color.parseColor(color);
+                // If still initializing, update the background
+                if (!isInitialized && !hasInitError) {
+                    setButtonBackground(this.customInitializingColor);
+                }
+            } catch (IllegalArgumentException e) {
+                // Invalid color format, ignore
+                this.customInitializingColor = null;
+            }
+        } else {
+            this.customInitializingColor = null;
         }
     }
 
@@ -136,11 +165,18 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
                     setButtonBackground(this.customErrorColor);
                 }
             } catch (IllegalArgumentException e) {
-                // Invalid color format, ignore
+                // Invalid color format, reset to default
                 this.customErrorColor = null;
+                if (hasInitError) {
+                    setButtonBackground(getErrorColor());
+                }
             }
         } else {
             this.customErrorColor = null;
+            // If already in error state, restore default error color
+            if (hasInitError) {
+                setButtonBackground(getErrorColor());
+            }
         }
     }
 
@@ -220,13 +256,15 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     }
 
     private void handlePermissionDenied() {
+        hasInitError = true;
+        hasPermissionError = true;
         post(() -> {
-            setText("Permiso de camara denegado");
+            setText(permissionDeniedText);
             setButtonBackground(getErrorColor());
             setEnabled(false);
         });
         if (resultListener != null) {
-            resultListener.onInitializationError("Permiso de camara denegado");
+            resultListener.onInitializationError(permissionDeniedText);
         }
     }
 

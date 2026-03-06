@@ -44,8 +44,24 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
 
     @objc var errorText: String = "Error de inicializacion" {
         didSet {
-            if hasInitError {
+            if hasInitError && !hasPermissionError {
                 setTitle(errorText, for: .normal)
+            }
+        }
+    }
+
+    @objc var permissionDeniedText: String = "Permiso de camara denegado" {
+        didSet {
+            if hasPermissionError {
+                setTitle(permissionDeniedText, for: .normal)
+            }
+        }
+    }
+
+    @objc var initializingBackgroundColor: String? {
+        didSet {
+            if !isSDKReady && !hasInitError, let color = parseColor(initializingBackgroundColor) {
+                backgroundColor = color
             }
         }
     }
@@ -82,8 +98,10 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
     }
 
     private var facetecSDKInstance: FaceTecSDKInstance?
+    private weak var faceTecViewController: UIViewController?
     private var isSDKReady = false
     private var hasInitError = false
+    private var hasPermissionError = false
 
     // MARK: - Init
 
@@ -100,7 +118,7 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
     private func setup() {
         setTitle(initializingText, for: .normal)
         setTitleColor(.white, for: .normal)
-        backgroundColor = .systemGray
+        backgroundColor = parseColor(initializingBackgroundColor) ?? .systemGray
         layer.cornerRadius = 8
         isEnabled = false
         clipsToBounds = true
@@ -140,10 +158,11 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
 
     private func handleCameraPermissionDenied() {
         self.hasInitError = true
+        self.hasPermissionError = true
         self.isSDKReady = false
 
         DispatchQueue.main.async {
-            self.setTitle("Permiso de camara denegado", for: .normal)
+            self.setTitle(self.permissionDeniedText, for: .normal)
             self.backgroundColor = self.getErrorColor()
             self.isEnabled = false
         }
@@ -228,6 +247,7 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
 
         // Crear FaceTec VC
         let faceTecVC = sdkInstance.start3DLiveness(with: processor)
+        self.faceTecViewController = faceTecVC
 
         // Containment
         parentVC.addChild(faceTecVC)
@@ -250,11 +270,12 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
     private func cleanup(parentVC: UIViewController?) {
         guard let parentVC = parentVC else { return }
 
-        // Remover FaceTec VC
-        for child in parentVC.children {
-            child.willMove(toParent: nil)
-            child.view.removeFromSuperview()
-            child.removeFromParent()
+        // Remover solo el FaceTec VC que agregamos
+        if let faceTecVC = faceTecViewController {
+            faceTecVC.willMove(toParent: nil)
+            faceTecVC.view.removeFromSuperview()
+            faceTecVC.removeFromParent()
+            faceTecViewController = nil
         }
 
         // Remover contenedor

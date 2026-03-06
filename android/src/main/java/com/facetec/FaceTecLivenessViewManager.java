@@ -189,6 +189,18 @@ public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLiven
         view.setErrorBackgroundColor(color);
     }
 
+    @ReactProp(name = "permissionDeniedText")
+    public void setPermissionDeniedText(RNFaceTecLivenessButton view, @Nullable String text) {
+        if (text != null) {
+            view.setPermissionDeniedText(text);
+        }
+    }
+
+    @ReactProp(name = "initializingBackgroundColor")
+    public void setInitializingBackgroundColor(RNFaceTecLivenessButton view, @Nullable String color) {
+        view.setInitializingBackgroundColor(color);
+    }
+
     @Override
     public Map<String, Object> getExportedCustomBubblingEventTypeConstants() {
         return MapBuilder.<String, Object>builder()

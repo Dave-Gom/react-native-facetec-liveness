@@ -10,7 +10,7 @@ This module is designed to be used as a local native module within your React Na
 
 Copy the `react-native-facetec` folder to your project:
 
-```
+```text
 your-react-native-project/
 ├── native_modules/
 │   └── react-native-facetec/   # Copy here
@@ -125,12 +125,16 @@ import { Facetec3DLivenessTestButton } from 'react-native-facetec';
 
 const MyComponent = () => {
   const handleResponse = (response) => {
-    if (response.success) {
+    if (response.success && !response.didError && response.result?.livenessProven) {
       Alert.alert('Exito', 'Verificacion de vida completada');
-      console.log('Status:', response.status);
+      console.log('Server info:', response.serverInfo);
+    } else if (response.didError) {
+      Alert.alert('Error', 'Error en el servidor');
+    } else if (response.success === undefined) {
+      // Sin respuesta del servidor (error de red o usuario cancelo)
+      console.log('Sin respuesta del servidor');
     } else {
-      Alert.alert('Error', response.message);
-      console.log('Error status:', response.status);
+      Alert.alert('Fallido', 'Liveness no verificado');
     }
   };
 
@@ -138,10 +142,13 @@ const MyComponent = () => {
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
       <Facetec3DLivenessTestButton
         onResponse={handleResponse}
-        style={{ width: 250, height: 50 }}
+        style={{ width: 250, height: 50, backgroundColor: 'blue' }}
         initializingText="Iniciando"
         readyText="Iniciar prueba de vida"
         errorText="Error de inicializacion"
+        permissionDeniedText="Permiso de camara denegado"
+        errorStyle={{ backgroundColor: 'red' }}
+        initializingStyle={{ backgroundColor: 'gray' }}
       />
     </View>
   );
@@ -157,32 +164,102 @@ export default MyComponent;
 | Prop | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
 | `onResponse` | `(response: LivenessResponse) => void` | Yes | - | Callback when liveness check completes |
-| `style` | `ViewStyle` | No | - | Custom styles for the button |
+| `style` | `ViewStyle` | No | - | Custom styles for the button (including backgroundColor for ready state) |
 | `initializingText` | `string` | No | `"Iniciando"` | Text shown while SDK initializes |
 | `readyText` | `string` | No | `"Iniciar prueba de vida"` | Text shown when ready |
 | `errorText` | `string` | No | `"Error de inicializacion"` | Text shown on init error |
+| `permissionDeniedText` | `string` | No | `"Permiso de camara denegado"` | Text shown when camera permission is denied |
+| `errorStyle` | `ViewStyle` | No | - | Custom styles for error state (only backgroundColor is applied) |
+| `initializingStyle` | `ViewStyle` | No | Falls back to `style` | Custom styles for initializing state (only backgroundColor is applied) |
 
 ---
 
 ## Response Object
 
+The response object contains data directly from the FaceTec server:
+
 ```typescript
 interface LivenessResponse {
-  success: boolean;
-  status: LivenessStatus;
-  message: string;
-  responseBlob?: string; // Response blob from FaceTec server (only on success)
+  /** Indicates general success from server */
+  success?: boolean;
+  /** Indicates if there was a server error */
+  didError?: boolean;
+  /** Encrypted response blob */
+  responseBlob?: string;
+  /** Liveness result */
+  result?: LivenessResult;
+  /** Server information */
+  serverInfo?: ServerInfo;
+  /** Additional session data */
+  additionalSessionData?: AdditionalSessionData;
+  /** HTTP call information */
+  httpCallInfo?: HttpCallInfo;
 }
 
-type LivenessStatus =
-  | 'success'
-  | 'error'
-  | 'initError'
-  | 'permissionDenied'
-  | 'cancelled'
-  | 'SESSION_COMPLETED'
-  | 'USER_CANCELLED_FACE_SCAN'
-  | 'REQUEST_ABORTED';
+interface LivenessResult {
+  /** Estimated age group */
+  ageV2GroupEnumInt?: number;
+  /** Indicates if liveness was proven */
+  livenessProven?: boolean;
+}
+
+interface ServerInfo {
+  /** Server SDK version */
+  coreServerSDKVersion?: string;
+  /** Server mode (Development Only, Production, etc.) */
+  mode?: string;
+  /** Security notice */
+  notice?: string;
+}
+
+interface AdditionalSessionData {
+  /** Application ID */
+  appID?: string;
+  /** Device model */
+  deviceModel?: string;
+  /** Device SDK version */
+  deviceSDKVersion?: string;
+  /** Installation ID */
+  installationID?: string;
+  /** Platform (ios, android) */
+  platform?: string;
+}
+
+interface HttpCallInfo {
+  /** Call date */
+  date?: string;
+  /** Epoch in seconds */
+  epochSecond?: number;
+  /** Call path */
+  path?: string;
+  /** HTTP method */
+  requestMethod?: string;
+  /** Transaction ID */
+  tid?: string;
+}
+```
+
+### Response Handling
+
+```typescript
+const handleResponse = (response: LivenessResponse) => {
+  // Success case: liveness verified
+  if (response.success && !response.didError && response.result?.livenessProven) {
+    console.log('Liveness verified!');
+  }
+  // Server error
+  else if (response.didError) {
+    console.log('Server error');
+  }
+  // No response (network error or user cancelled)
+  else if (response.success === undefined) {
+    console.log('No server response');
+  }
+  // Liveness not proven
+  else {
+    console.log('Liveness not verified');
+  }
+};
 ```
 
 ---
@@ -191,25 +268,39 @@ type LivenessStatus =
 
 | State | Text | Color | Enabled |
 |-------|------|-------|---------|
-| Initializing | "Iniciando" | Gray | No |
-| Ready | "Iniciar prueba de vida" | Blue | Yes |
-| Error | "Error de inicializacion" | Red | No |
+| Initializing | "Iniciando" | Gray (or `initializingStyle.backgroundColor`, or `style.backgroundColor`) | No |
+| Ready | "Iniciar prueba de vida" | Controlled via `style` prop | Yes |
+| Error | "Error de inicializacion" | Red (or `errorStyle.backgroundColor`) | No |
+| Permission Denied | "Permiso de camara denegado" | Red (or `errorStyle.backgroundColor`) | No |
 
 ---
 
 ## Configuration
 
-To change the FaceTec API configuration, modify:
+To configure the FaceTec SDK, modify these files:
 
 - **iOS**: `ios/FaceTecLiveness/Config.swift`
 - **Android**: `android/src/main/java/com/facetec/Config.java`
 
-Update these values with your production credentials:
+### Required Configuration
 
-```
+```text
 DeviceKeyIdentifier = "your-device-key"
-YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT = "https://your-api-endpoint.com"
+YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT = "your-endpoint-url"
 ```
+
+### API Endpoint Configuration
+
+| Environment | Endpoint | Notes |
+|-------------|----------|-------|
+| **Testing/Dev** | `https://api.facetec.com/api/v4/biometrics/process-request` | FaceTec's public testing server |
+| **Production** | `https://your-server.com/facetec/process` | YOUR OWN backend server |
+
+**IMPORTANT**: In production, you MUST use your own backend server that proxies requests to FaceTec. Calling FaceTec's API directly from the app is NOT allowed in production.
+
+See:
+- [Security Best Practices](https://dev.facetec.com/security-best-practices#server-rest-endpoint-security)
+- [Architecture Diagram](https://dev.facetec.com/configuration-options#zoom-architecture-and-data-flow)
 
 ---
 
@@ -241,7 +332,7 @@ Always use `yarn install` instead of `npm install` to respect the existing `yarn
 
 ## Project Structure
 
-```
+```text
 react-native-facetec/
 ├── src/
 │   ├── index.ts

@@ -64,7 +64,11 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
         // - In Your Webservice, build an endpoint that takes incoming requests, and forwards them to FaceTec Server.
         // - This code should never call your server directly. It should contact middleware you have created that forwards requests to your server.
         //
-        var request = URLRequest(url: NSURL(string: Config.YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT)! as URL)
+        guard let url = URL(string: Config.YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT), !Config.YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT.isEmpty else {
+            referencingProcessor.onCatastrophicNetworkError(sessionRequestCallback: sessionRequestCallback)
+            return
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -156,67 +160,23 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
     
     func getResponseBlobOrHandleError(data: Data?) -> FaceTecServerResponse? {
         guard let data = data else {
-            // No data received - network error
-            print("🔴 [FaceTec] No data received from server")
             logErrorAndCallAbortAndClose(errorDetail: "Exception raised while attempting HTTPS call.")
             return nil
         }
 
         guard let responseJSON = try? JSONSerialization.jsonObject(with: data, options: JSONSerialization.ReadingOptions.allowFragments) as? [String: AnyObject] else {
-            // Parsing the response into JSON failed
-            print("🔴 [FaceTec] JSON Parsing Failed")
             logErrorAndCallAbortAndClose(errorDetail: "JSON Parsing Failed.  This indicates an issue in your own webservice or API contracts.");
             return nil
         }
 
-        // Log the full server response for debugging
-        print("🔵 [FaceTec] ========== SERVER RESPONSE ==========")
-        if let jsonData = try? JSONSerialization.data(withJSONObject: responseJSON, options: .prettyPrinted),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            print(jsonString)
-        } else {
-            print(responseJSON)
-        }
-        print("🔵 [FaceTec] =====================================")
-
-        // Convert responseJSON to [String: Any] for rawData - ALWAYS pass this
         let rawData = responseJSON as? [String: Any] ?? [:]
 
-        // Extract key fields from server response (based on actual FaceTec response structure)
-        // success: 1 = true, 0 = false
+        // Extract key fields from server response
         let success = (responseJSON["success"] as? Int ?? 0) == 1
-        // didError: 0 = no error, 1 = error
         let didError = (responseJSON["didError"] as? Int ?? 1) == 1
-        // result.livenessProven: 1 = liveness passed
         let result = responseJSON["result"] as? [String: Any]
         let livenessProven = (result?["livenessProven"] as? Int ?? 0) == 1
-        // responseBlob may or may not be present
         let responseBlob = responseJSON["responseBlob"] as? String ?? ""
-
-        // Log processing result
-        if !didError && success {
-            print("✅ [FaceTec] success: true, didError: false")
-            print("✅ [FaceTec] livenessProven: \(livenessProven)")
-            if let ageGroup = result?["ageV2GroupEnumInt"] as? Int {
-                print("✅ [FaceTec] ageV2GroupEnumInt: \(ageGroup)")
-            }
-        } else {
-            print("⚠️ [FaceTec] success: \(success), didError: \(didError)")
-            // Log additional error info if available
-            if let errorMessage = responseJSON["errorMessage"] as? String {
-                print("⚠️ [FaceTec] errorMessage: \(errorMessage)")
-            }
-            if let reason = responseJSON["reason"] as? String {
-                print("⚠️ [FaceTec] reason: \(reason)")
-            }
-        }
-
-        if let serverInfo = responseJSON["serverInfo"] as? [String: Any] {
-            let mode = serverInfo["mode"] as? String ?? "unknown"
-            print("🔵 [FaceTec] Server mode: \(mode)")
-        }
-
-        // ALWAYS return the server response, even if responseBlob is empty
         return FaceTecServerResponse(
             responseBlob: responseBlob,
             success: success,

@@ -1,12 +1,12 @@
 import React, { useMemo } from 'react';
 import {
-  requireNativeComponent,
-  ViewStyle,
-  StyleSheet,
+  ColorValue,
   NativeSyntheticEvent,
   Platform,
+  requireNativeComponent,
   StyleProp,
-  processColor,
+  StyleSheet,
+  ViewStyle,
 } from 'react-native';
 
 /**
@@ -119,11 +119,24 @@ export interface Facetec3DLivenessTestButtonProps {
   errorText?: string;
 
   /**
+   * Texto mostrado cuando el permiso de camara es denegado
+   * @default "Permiso de camara denegado"
+   */
+  permissionDeniedText?: string;
+
+  /**
    * Estilos personalizados para el boton cuando hay un error
    * Si no se proporciona, se usara el color rojo por defecto
    * Solo se aplica backgroundColor
    */
   errorStyle?: StyleProp<ViewStyle>;
+
+  /**
+   * Estilos personalizados para el boton mientras se inicializa
+   * Si no se proporciona, se usara el estilo de la prop style
+   * Solo se aplica backgroundColor
+   */
+  initializingStyle?: StyleProp<ViewStyle>;
 }
 
 /**
@@ -151,12 +164,15 @@ interface NativeFaceTecButtonProps {
   initializingText?: string;
   readyText?: string;
   errorText?: string;
-  errorBackgroundColor?: string;
+  permissionDeniedText?: string;
+  errorBackgroundColor?: ColorValue;
+  initializingBackgroundColor?: ColorValue;
 }
 
 // Componente nativo
-const NativeFaceTecButton =
-  requireNativeComponent<NativeFaceTecButtonProps>('FaceTecLivenessButton');
+const NativeFaceTecButton = requireNativeComponent<NativeFaceTecButtonProps>(
+  'FaceTecLivenessButton',
+);
 
 /**
  * Facetec3DLivenessTestButton
@@ -202,21 +218,37 @@ export const Facetec3DLivenessTestButton: React.FC<
   initializingText = 'Iniciando',
   readyText = 'Iniciar prueba de vida',
   errorText = 'Error de inicializacion',
+  permissionDeniedText = 'Permiso de camara denegado',
   errorStyle,
+  initializingStyle,
 }) => {
   // Extract backgroundColor from errorStyle if provided
   const errorBackgroundColor = useMemo(() => {
     if (!errorStyle) return undefined;
     const flatStyle = StyleSheet.flatten(errorStyle);
-    return flatStyle?.backgroundColor as string | undefined;
+    return flatStyle?.backgroundColor as ColorValue | undefined;
   }, [errorStyle]);
+
+  // Extract backgroundColor from initializingStyle if provided, fallback to style
+  const initializingBackgroundColor = useMemo(() => {
+    if (initializingStyle) {
+      const flatStyle = StyleSheet.flatten(initializingStyle);
+      return flatStyle?.backgroundColor as ColorValue | undefined;
+    }
+    // Fallback to style's backgroundColor
+    if (style) {
+      const flatStyle = StyleSheet.flatten(style);
+      return flatStyle?.backgroundColor as ColorValue | undefined;
+    }
+    return undefined;
+  }, [initializingStyle, style]);
 
   /**
    * Maneja el evento nativo y lo transforma al callback de JS
    * Los campos ya vienen convertidos a boolean desde el lado nativo
    */
   const handleNativeResponse = (
-    event: NativeSyntheticEvent<NativeLivenessResponse>
+    event: NativeSyntheticEvent<NativeLivenessResponse>,
   ) => {
     const nativeEvent = event.nativeEvent;
 
@@ -242,7 +274,9 @@ export const Facetec3DLivenessTestButton: React.FC<
       initializingText={initializingText}
       readyText={readyText}
       errorText={errorText}
+      permissionDeniedText={permissionDeniedText}
       errorBackgroundColor={errorBackgroundColor}
+      initializingBackgroundColor={initializingBackgroundColor}
     />
   );
 };

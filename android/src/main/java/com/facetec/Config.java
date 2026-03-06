@@ -20,15 +20,15 @@ public class Config {
     // -------------------------------------
     // REQUIRED
     // The URL to call to process FaceTec SDK Sessions.
-    // In Production, you likely will handle network requests elsewhere and without the use of this variable.
-    // See https://dev.facetec.com/security-best-practices#server-rest-endpoint-security for more information.
     //
-    // Developer Note: In Your Production Application, networking requests from Your App will call Your Webservice.
-    // Calling the FaceTec Server Webservice directly from Your App is not allowed (except for initial testing).
-    // Please see the FaceTec Architecture Diagram here more information:  https://dev.facetec.com/configuration-options#zoom-architecture-and-data-flow
+    // IMPORTANT: Configure this value before using the SDK.
+    // - For testing: Use FaceTec's testing API "https://api.facetec.com/api/v4/biometrics/process-request"
+    // - For production: Use YOUR OWN backend server that proxies requests to FaceTec.
+    //   Calling FaceTec directly from the app is NOT allowed in production.
     //
-    // This field is auto-populated by the FaceTec SDK Configuration Wizard.
-    public static String YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT = "https://api.facetec.com/api/v4/biometrics/process-request";
+    // See https://dev.facetec.com/security-best-practices#server-rest-endpoint-security
+    // See https://dev.facetec.com/configuration-options#zoom-architecture-and-data-flow
+    public static String YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT = "";
 
     // -------------------------------------
     // This app can modify the customization to demonstrate different look/feel preferences

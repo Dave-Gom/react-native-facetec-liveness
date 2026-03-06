@@ -2,7 +2,6 @@ package com.facetec;
 
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Log;
 
 import androidx.annotation.NonNull;
 
@@ -30,7 +29,6 @@ import com.facetec.BuildConfig;
 // - Adding code that modifies any App UI (Yours or FaceTec's) is not allowed.  Only add code that modifies your own App UI once the FaceTec UI is closed.
 public class SampleAppNetworkingRequest {
 
-    private static final String TAG = "FaceTec";
     private static final int MAX_ERROR_RETRIES = 2;
     private static final long RETRY_DELAY_MS = 500;
 
@@ -71,7 +69,7 @@ public class SampleAppNetworkingRequest {
 
         }
         catch (JSONException e) {
-            e.printStackTrace();
+            // JSON error - continue with empty payload
         }
 
         RequestBody requestBody = RequestBody.create(MediaType.parse("application/json; charset=utf-8"), sessionRequestCallPayload.toString());
@@ -149,18 +147,12 @@ public class SampleAppNetworkingRequest {
 
             @Override
             public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                // On error, retry if we haven't exceeded the max retries
                 if (errorCount < MAX_ERROR_RETRIES) {
                     errorCount++;
-                    Log.w(TAG, "🔄 [FaceTec] Network error, retrying... (attempt " + (errorCount + 1) + "/" + (MAX_ERROR_RETRIES + 1) + ")");
-
-                    // Retry after a delay
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
                         doRequestWithRetry();
                     }, RETRY_DELAY_MS);
                 } else {
-                    // On catastrophic error after all retries, call the onCatastrophicNetworkError handler
-                    Log.e(TAG, "🔴 [FaceTec] Network error after " + (MAX_ERROR_RETRIES + 1) + " attempts: " + e.getMessage());
                     referencingProcessor.onCatastrophicNetworkError(sessionRequestCallback);
                 }
             }
@@ -168,64 +160,26 @@ public class SampleAppNetworkingRequest {
     }
 
     private static FaceTecServerResponse getResponseBlobOrHandleError(okhttp3.Response response, SessionRequestProcessor referencingProcessor, @NonNull FaceTecSessionRequestProcessor.Callback sessionRequestCallback) throws IOException {
-        // On request completion, parse the response and return the data
         if (response.body() != null) {
             try {
                 String responseBody = response.body().string();
                 JSONObject responseJSON = new JSONObject(responseBody);
 
-                // Log the full server response for debugging
-                Log.d(TAG, "🔵 [FaceTec] ========== SERVER RESPONSE ==========");
-                Log.d(TAG, responseJSON.toString(2));
-                Log.d(TAG, "🔵 [FaceTec] =====================================");
-
-                // Extract key fields from server response (based on actual FaceTec response structure)
-                // success: 1 = true, 0 = false
                 boolean success = responseJSON.optInt("success", 0) == 1;
-                // didError: 0 = no error, 1 = error
                 boolean didError = responseJSON.optInt("didError", 1) == 1;
-                // result.livenessProven: 1 = liveness passed
                 JSONObject result = responseJSON.optJSONObject("result");
                 boolean livenessProven = result != null && result.optInt("livenessProven", 0) == 1;
-                // responseBlob may or may not be present
                 String responseBlob = responseJSON.optString("responseBlob", "");
 
-                // Log processing result
-                if (!didError && success) {
-                    Log.d(TAG, "✅ [FaceTec] success: true, didError: false");
-                    Log.d(TAG, "✅ [FaceTec] livenessProven: " + livenessProven);
-                    if (result != null && result.has("ageV2GroupEnumInt")) {
-                        Log.d(TAG, "✅ [FaceTec] ageV2GroupEnumInt: " + result.optInt("ageV2GroupEnumInt"));
-                    }
-                } else {
-                    Log.w(TAG, "⚠️ [FaceTec] success: " + success + ", didError: " + didError);
-                    // Log additional error info if available
-                    if (responseJSON.has("errorMessage")) {
-                        Log.w(TAG, "⚠️ [FaceTec] errorMessage: " + responseJSON.optString("errorMessage"));
-                    }
-                    if (responseJSON.has("reason")) {
-                        Log.w(TAG, "⚠️ [FaceTec] reason: " + responseJSON.optString("reason"));
-                    }
-                }
-
-                JSONObject serverInfo = responseJSON.optJSONObject("serverInfo");
-                if (serverInfo != null) {
-                    String mode = serverInfo.optString("mode", "unknown");
-                    Log.d(TAG, "🔵 [FaceTec] Server mode: " + mode);
-                }
-
                 response.close();
-                // ALWAYS return the server response, even if responseBlob is empty
                 return new FaceTecServerResponse(responseBlob, success, didError, livenessProven, responseJSON);
             }
             catch (JSONException e) {
-                Log.e(TAG, "🔴 [FaceTec] JSON Parsing Failed: " + e.getMessage());
                 response.close();
                 logErrorAndCallAbortAndClose("JSON Parsing Failed.", referencingProcessor, response, sessionRequestCallback);
             }
         }
         else {
-            Log.e(TAG, "🔴 [FaceTec] Response body is null. Code: " + response.code());
             logErrorAndCallAbortAndClose("API Response body is null.", referencingProcessor, response, sessionRequestCallback);
         }
 
