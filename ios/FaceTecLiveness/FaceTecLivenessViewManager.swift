@@ -20,37 +20,39 @@ class FaceTecLivenessButtonManager: RCTViewManager {
 
 class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
 
-    // MARK: - React Native Event Callback
+    // MARK: - React Native Event Callbacks
 
     @objc var onResponse: RCTBubblingEventBlock?
+    @objc var onError: RCTDirectEventBlock?
+    @objc var onStateChange: RCTDirectEventBlock?
 
     // MARK: - Configurable Text Properties
 
-    @objc var initializingText: String = "Iniciando" {
+    @objc var initializingText: String = "Initializing" {
         didSet {
-            if !isSDKReady && !hasInitError {
+            if currentState == .initializing {
                 setTitle(initializingText, for: .normal)
             }
         }
     }
 
-    @objc var readyText: String = "Iniciar prueba de vida" {
+    @objc var readyText: String = "Start liveness check" {
         didSet {
-            if isSDKReady {
+            if currentState == .ready {
                 setTitle(readyText, for: .normal)
             }
         }
     }
 
-    @objc var errorText: String = "Error de inicializacion" {
+    @objc var errorText: String = "Initialization error" {
         didSet {
-            if hasInitError && !hasPermissionError {
+            if currentState == .error && !hasPermissionError {
                 setTitle(errorText, for: .normal)
             }
         }
     }
 
-    @objc var permissionDeniedText: String = "Permiso de camara denegado" {
+    @objc var permissionDeniedText: String = "Camera permission denied" {
         didSet {
             if hasPermissionError {
                 setTitle(permissionDeniedText, for: .normal)
@@ -58,50 +60,26 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
         }
     }
 
-    @objc var initializingBackgroundColor: String? {
+    // MARK: - State
+
+    private enum ButtonState: String {
+        case initializing
+        case ready
+        case error
+    }
+
+    private var currentState: ButtonState = .initializing {
         didSet {
-            if !isSDKReady && !hasInitError, let color = parseColor(initializingBackgroundColor) {
-                backgroundColor = color
+            if oldValue != currentState {
+                emitStateChange()
             }
         }
-    }
-
-    @objc var errorBackgroundColor: String? {
-        didSet {
-            if hasInitError, let color = parseColor(errorBackgroundColor) {
-                backgroundColor = color
-            }
-        }
-    }
-
-    // MARK: - Properties
-
-    private var customErrorColor: UIColor? {
-        return parseColor(errorBackgroundColor)
-    }
-
-    private func parseColor(_ colorString: String?) -> UIColor? {
-        guard let colorString = colorString, !colorString.isEmpty else { return nil }
-        var hexString = colorString.trimmingCharacters(in: .whitespacesAndNewlines)
-        if hexString.hasPrefix("#") {
-            hexString.removeFirst()
-        }
-        guard hexString.count == 6, let hexValue = UInt64(hexString, radix: 16) else { return nil }
-        let red = CGFloat((hexValue & 0xFF0000) >> 16) / 255.0
-        let green = CGFloat((hexValue & 0x00FF00) >> 8) / 255.0
-        let blue = CGFloat(hexValue & 0x0000FF) / 255.0
-        return UIColor(red: red, green: green, blue: blue, alpha: 1.0)
-    }
-
-    private func getErrorColor() -> UIColor {
-        return customErrorColor ?? .systemRed
     }
 
     private var facetecSDKInstance: FaceTecSDKInstance?
     private weak var faceTecViewController: UIViewController?
-    private var isSDKReady = false
-    private var hasInitError = false
     private var hasPermissionError = false
+    private var isSessionActive = false
 
     // MARK: - Init
 
@@ -118,7 +96,6 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
     private func setup() {
         setTitle(initializingText, for: .normal)
         setTitleColor(.white, for: .normal)
-        backgroundColor = parseColor(initializingBackgroundColor) ?? .systemGray
         layer.cornerRadius = 8
         isEnabled = false
         clipsToBounds = true
@@ -128,6 +105,13 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
         addTarget(self, action: #selector(buttonPressed), for: .touchUpInside)
 
         checkCameraPermissionAndInitialize()
+    }
+
+    // MARK: - State Change Emission
+
+    private func emitStateChange() {
+        guard let onStateChange = onStateChange else { return }
+        onStateChange(["state": currentState.rawValue])
     }
 
     // MARK: - Camera Permission
@@ -157,17 +141,15 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
     }
 
     private func handleCameraPermissionDenied() {
-        self.hasInitError = true
         self.hasPermissionError = true
-        self.isSDKReady = false
 
         DispatchQueue.main.async {
             self.setTitle(self.permissionDeniedText, for: .normal)
-            self.backgroundColor = self.getErrorColor()
             self.isEnabled = false
+            self.currentState = .error
         }
 
-        emitServerResponse(serverResponse: nil)
+        emitError(errorType: .permissionDenied, message: permissionDeniedText)
     }
 
     // MARK: - FaceTec Initialization
@@ -182,42 +164,39 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
 
     func onFaceTecSDKInitializeSuccess(sdkInstance: FaceTecSDKInstance) {
         self.facetecSDKInstance = sdkInstance
-        self.isSDKReady = true
-        self.hasInitError = false
+        self.hasPermissionError = false
 
         DispatchQueue.main.async {
             self.setTitle(self.readyText, for: .normal)
-            // Don't override backgroundColor - let React Native control it via style prop
             self.isEnabled = true
+            self.currentState = .ready
         }
     }
 
     func onFaceTecSDKInitializeError(error: FaceTecInitializationError) {
-        self.hasInitError = true
-        self.isSDKReady = false
-
         DispatchQueue.main.async {
             self.setTitle(self.errorText, for: .normal)
-            self.backgroundColor = self.getErrorColor()
             self.isEnabled = false
+            self.currentState = .error
         }
 
-        // Emit error event to React Native (no server response available)
-        emitServerResponse(serverResponse: nil)
+        emitError(errorType: .initError, message: String(describing: error))
     }
 
     // MARK: - Button Action
 
     @objc private func buttonPressed() {
-        guard isSDKReady, let sdkInstance = facetecSDKInstance else {
+        // Prevent double-tap - check if session is already active
+        guard currentState == .ready, !isSessionActive, let sdkInstance = facetecSDKInstance else {
             return
         }
 
         guard let parentVC = findParentViewController() else {
-            emitServerResponse(serverResponse: nil)
+            emitError(errorType: .internalError, message: "Could not find parent view controller")
             return
         }
 
+        isSessionActive = true
         startLiveness(sdkInstance: sdkInstance, parentVC: parentVC)
     }
 
@@ -241,7 +220,14 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
         let processor = SessionRequestProcessor()
         processor.onComplete = { [weak self, weak parentVC] result, serverResponse in
             DispatchQueue.main.async {
-                self?.handleLivenessResult(result, serverResponse: serverResponse, parentVC: parentVC)
+                if let self = self {
+                    self.handleLivenessResult(result, serverResponse: serverResponse, parentVC: parentVC)
+                } else {
+                    // Self was deallocated - still perform cleanup to avoid orphan UI
+                    if let parentVC = parentVC {
+                        parentVC.view.viewWithTag(999)?.removeFromSuperview()
+                    }
+                }
             }
         }
 
@@ -260,11 +246,30 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
     // MARK: - Handle Result
 
     private func handleLivenessResult(_ result: FaceTecSessionResult, serverResponse: FaceTecServerResponse?, parentVC: UIViewController?) {
+        // Reset session flag
+        isSessionActive = false
+
         // Limpiar UI
         cleanup(parentVC: parentVC)
 
-        // Emitir evento a React Native con los datos del servidor FaceTec
-        emitServerResponse(serverResponse: serverResponse)
+        // If we have a server response, emit it via onResponse
+        if let serverResponse = serverResponse {
+            emitServerResponse(serverResponse: serverResponse)
+            return
+        }
+
+        // No server response - determine error type from session status
+        let status = result.sessionStatus
+        let statusString = String(describing: status)
+
+        // Check if status indicates user cancellation
+        if statusString.lowercased().contains("cancelled") || statusString.lowercased().contains("canceled") {
+            emitError(errorType: .sessionCancelled, message: "User cancelled the session")
+        } else if statusString.lowercased().contains("timeout") {
+            emitError(errorType: .networkError, message: "Session timed out")
+        } else {
+            emitError(errorType: .networkError, message: "Session ended without server response: \(statusString)")
+        }
     }
 
     private func cleanup(parentVC: UIViewController?) {
@@ -284,51 +289,69 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
 
     // MARK: - React Native Event Emission
 
+    /// Error types for onError callback
+    private enum ErrorType: String {
+        case permissionDenied = "permission_denied"
+        case initError = "init_error"
+        case sessionCancelled = "session_cancelled"
+        case networkError = "network_error"
+        case internalError = "internal_error"
+    }
+
+    /// Emits an error event to React Native
+    private func emitError(errorType: ErrorType, message: String) {
+        guard let onError = onError else { return }
+
+        let errorEvent: [String: Any] = [
+            "errorType": errorType.rawValue,
+            "message": message
+        ]
+        onError(errorEvent)
+    }
+
     /// Emite la respuesta del servidor FaceTec a React Native
     /// Los campos con valores 1/0 son convertidos a booleanos
-    /// Si no hay respuesta del servidor, los campos seran undefined (no incluidos)
-    private func emitServerResponse(serverResponse: FaceTecServerResponse?) {
+    private func emitServerResponse(serverResponse: FaceTecServerResponse) {
         guard let onResponse = onResponse else { return }
 
         var response: [String: Any] = [:]
 
-        if let serverResponse = serverResponse {
-            // Campos principales convertidos a boolean
-            response["success"] = serverResponse.success
-            response["didError"] = serverResponse.didError
-            response["responseBlob"] = serverResponse.responseBlob
+        // Campos principales convertidos a boolean
+        response["success"] = serverResponse.success
+        response["didError"] = serverResponse.didError
+        response["responseBlob"] = serverResponse.responseBlob
 
-            // Extraer y convertir result
-            if let rawResult = serverResponse.rawData["result"] as? [String: Any] {
-                var result: [String: Any] = [:]
-                // Convertir livenessProven de 1/0 a boolean
-                if let livenessProven = rawResult["livenessProven"] as? Int {
-                    result["livenessProven"] = livenessProven == 1
-                }
-                if let ageGroup = rawResult["ageV2GroupEnumInt"] as? Int {
-                    result["ageV2GroupEnumInt"] = ageGroup
-                }
-                if !result.isEmpty {
-                    response["result"] = result
-                }
+        // Extraer y convertir result
+        if let rawResult = serverResponse.rawData["result"] as? [String: Any] {
+            var result: [String: Any] = [:]
+            // Convertir livenessProven de 1/0 o true/false a boolean
+            if let livenessProvenInt = rawResult["livenessProven"] as? Int {
+                result["livenessProven"] = livenessProvenInt == 1
+            } else if let livenessProvenBool = rawResult["livenessProven"] as? Bool {
+                result["livenessProven"] = livenessProvenBool
             }
-
-            // Pasar serverInfo tal cual
-            if let serverInfo = serverResponse.rawData["serverInfo"] as? [String: Any] {
-                response["serverInfo"] = serverInfo
+            if let ageGroup = rawResult["ageV2GroupEnumInt"] as? Int {
+                result["ageV2GroupEnumInt"] = ageGroup
             }
-
-            // Pasar additionalSessionData tal cual
-            if let additionalSessionData = serverResponse.rawData["additionalSessionData"] as? [String: Any] {
-                response["additionalSessionData"] = additionalSessionData
-            }
-
-            // Pasar httpCallInfo tal cual
-            if let httpCallInfo = serverResponse.rawData["httpCallInfo"] as? [String: Any] {
-                response["httpCallInfo"] = httpCallInfo
+            if !result.isEmpty {
+                response["result"] = result
             }
         }
-        // Si no hay serverResponse, response queda vacio (todos los campos undefined)
+
+        // Pasar serverInfo tal cual
+        if let serverInfo = serverResponse.rawData["serverInfo"] as? [String: Any] {
+            response["serverInfo"] = serverInfo
+        }
+
+        // Pasar additionalSessionData tal cual
+        if let additionalSessionData = serverResponse.rawData["additionalSessionData"] as? [String: Any] {
+            response["additionalSessionData"] = additionalSessionData
+        }
+
+        // Pasar httpCallInfo tal cual
+        if let httpCallInfo = serverResponse.rawData["httpCallInfo"] as? [String: Any] {
+            response["httpCallInfo"] = httpCallInfo
+        }
 
         onResponse(response)
     }

@@ -65,7 +65,7 @@ cd ios && pod install && cd ..
 
 ```xml
 <key>NSCameraUsageDescription</key>
-<string>Necesitamos acceso a la camara para validacion facial</string>
+<string>Necesitamos acceso a la cámara para validación facial</string>
 ```
 
 ---
@@ -126,15 +126,30 @@ import { Facetec3DLivenessTestButton } from 'react-native-facetec';
 const MyComponent = () => {
   const handleResponse = (response) => {
     if (response.success && !response.didError && response.result?.livenessProven) {
-      Alert.alert('Exito', 'Verificacion de vida completada');
+      Alert.alert('Éxito', 'Verificación de vida completada');
       console.log('Server info:', response.serverInfo);
     } else if (response.didError) {
       Alert.alert('Error', 'Error en el servidor');
-    } else if (response.success === undefined) {
-      // Sin respuesta del servidor (error de red o usuario cancelo)
-      console.log('Sin respuesta del servidor');
     } else {
       Alert.alert('Fallido', 'Liveness no verificado');
+    }
+  };
+
+  const handleError = (error) => {
+    switch (error.errorType) {
+      case 'permission_denied':
+        Alert.alert('Permiso denegado', 'Se requiere acceso a la cámara');
+        break;
+      case 'session_cancelled':
+        // Usuario canceló, no mostrar alerta
+        console.log('Usuario canceló la sesión');
+        break;
+      case 'init_error':
+        Alert.alert('Error', 'No se pudo inicializar el SDK');
+        break;
+      case 'network_error':
+        Alert.alert('Error de red', error.message);
+        break;
     }
   };
 
@@ -142,11 +157,12 @@ const MyComponent = () => {
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
       <Facetec3DLivenessTestButton
         onResponse={handleResponse}
+        onError={handleError}
         style={{ width: 250, height: 50, backgroundColor: 'blue' }}
-        initializingText="Iniciando"
-        readyText="Iniciar prueba de vida"
-        errorText="Error de inicializacion"
-        permissionDeniedText="Permiso de camara denegado"
+        initializingText="Initializing"
+        readyText="Start liveness check"
+        errorText="Initialization error"
+        permissionDeniedText="Camera permission denied"
         errorStyle={{ backgroundColor: 'red' }}
         initializingStyle={{ backgroundColor: 'gray' }}
       />
@@ -163,14 +179,61 @@ export default MyComponent;
 
 | Prop | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `onResponse` | `(response: LivenessResponse) => void` | Yes | - | Callback when liveness check completes |
+| `onResponse` | `(response: LivenessResponse) => void` | Yes | - | Callback when liveness check completes with server response |
+| `onError` | `(error: ErrorEvent) => void` | No | - | Callback for errors without server response (permission denied, cancelled, etc.) |
 | `style` | `ViewStyle` | No | - | Custom styles for the button (including backgroundColor for ready state) |
-| `initializingText` | `string` | No | `"Iniciando"` | Text shown while SDK initializes |
-| `readyText` | `string` | No | `"Iniciar prueba de vida"` | Text shown when ready |
-| `errorText` | `string` | No | `"Error de inicializacion"` | Text shown on init error |
-| `permissionDeniedText` | `string` | No | `"Permiso de camara denegado"` | Text shown when camera permission is denied |
+| `initializingText` | `string` | No | `"Initializing"` | Text shown while SDK initializes |
+| `readyText` | `string` | No | `"Start liveness check"` | Text shown when ready |
+| `errorText` | `string` | No | `"Initialization error"` | Text shown on init error |
+| `permissionDeniedText` | `string` | No | `"Camera permission denied"` | Text shown when camera permission is denied |
 | `errorStyle` | `ViewStyle` | No | - | Custom styles for error state (only backgroundColor is applied) |
 | `initializingStyle` | `ViewStyle` | No | Falls back to `style` | Custom styles for initializing state (only backgroundColor is applied) |
+
+---
+
+## Error Event
+
+The error event is emitted when an error occurs without a server response:
+
+```typescript
+interface ErrorEvent {
+  /** Type of error that occurred */
+  errorType: ErrorType;
+  /** Descriptive error message */
+  message: string;
+}
+
+type ErrorType =
+  | 'permission_denied'   // Camera permission was denied
+  | 'init_error'          // SDK initialization failed
+  | 'session_cancelled'   // User cancelled the session
+  | 'network_error'       // Network error or timeout
+  | 'internal_error';     // Internal error (e.g., no parent view controller)
+```
+
+### Error Handling
+
+```typescript
+const handleError = (error: ErrorEvent) => {
+  switch (error.errorType) {
+    case 'permission_denied':
+      // Prompt user to enable camera permission
+      break;
+    case 'session_cancelled':
+      // User cancelled - usually no action needed
+      break;
+    case 'init_error':
+      // SDK failed to initialize - check configuration
+      break;
+    case 'network_error':
+      // Network issue - prompt retry
+      break;
+    case 'internal_error':
+      // Unexpected error
+      break;
+  }
+};
+```
 
 ---
 
@@ -251,15 +314,14 @@ const handleResponse = (response: LivenessResponse) => {
   else if (response.didError) {
     console.log('Server error');
   }
-  // No response (network error or user cancelled)
-  else if (response.success === undefined) {
-    console.log('No server response');
-  }
   // Liveness not proven
   else {
     console.log('Liveness not verified');
   }
 };
+
+// Note: Cases without server response (network error, user cancelled, permission denied)
+// are now handled via the onError callback instead of onResponse
 ```
 
 ---
@@ -268,10 +330,10 @@ const handleResponse = (response: LivenessResponse) => {
 
 | State | Text | Color | Enabled |
 |-------|------|-------|---------|
-| Initializing | "Iniciando" | Gray (or `initializingStyle.backgroundColor`, or `style.backgroundColor`) | No |
-| Ready | "Iniciar prueba de vida" | Controlled via `style` prop | Yes |
-| Error | "Error de inicializacion" | Red (or `errorStyle.backgroundColor`) | No |
-| Permission Denied | "Permiso de camara denegado" | Red (or `errorStyle.backgroundColor`) | No |
+| Initializing | "Initializing" | Gray (or `initializingStyle.backgroundColor`, or `style.backgroundColor`) | No |
+| Ready | "Start liveness check" | Controlled via `style` prop | Yes |
+| Error | "Initialization error" | Red (or `errorStyle.backgroundColor`) | No |
+| Permission Denied | "Camera permission denied" | Red (or `errorStyle.backgroundColor`) | No |
 
 ---
 

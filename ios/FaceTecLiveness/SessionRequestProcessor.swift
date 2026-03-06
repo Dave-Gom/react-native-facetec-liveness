@@ -54,13 +54,13 @@ class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSess
     // Please note that onUploadProgress is a convenience function set up on this class,
     // so that this function can be called asynchronously when your networking code receives an upload progress event.
     func onUploadProgress(progress: Float, sessionRequestCallback: FaceTecSessionRequestProcessorCallback) {
-        sessionRequestCallback.updateProgress(progress);
+        sessionRequestCallback.updateProgress(progress)
     }
     
     // Calling abortOnCatastrophicError is not allowed except for catastrophic network failures.
     // Calling abortOnCatastrophicError to exit the FaceTec UI with custom logic is not allowed.
     func onCatastrophicNetworkError(sessionRequestCallback: FaceTecSessionRequestProcessorCallback) {
-        sessionRequestCallback.abortOnCatastrophicError();
+        sessionRequestCallback.abortOnCatastrophicError()
     }
     
 

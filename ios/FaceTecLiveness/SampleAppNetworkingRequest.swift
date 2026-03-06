@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import FaceTecSDK
 
 // Structure to hold server response data
@@ -44,6 +45,9 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
     }
     
     func send(sessionRequestBlob: String) {
+        // Reset error count for each new request
+        errorCount = 0
+
         //
         // Step 1: Construct the payload.
         //
@@ -142,7 +146,7 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
             self.currentTask = nil
 
             if (error != nil && self.errorCount < SampleAppNetworkingRequest.MAX_ERROR_RETRIES) {
-                self.errorCount += 1;
+                self.errorCount += 1
                 // After a delay, try again
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     self.doSessionRequestWithRetry(session: session, request: request, completionHandler: completionHandler)
@@ -165,17 +169,27 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
         }
 
         guard let responseJSON = try? JSONSerialization.jsonObject(with: data, options: JSONSerialization.ReadingOptions.allowFragments) as? [String: AnyObject] else {
-            logErrorAndCallAbortAndClose(errorDetail: "JSON Parsing Failed.  This indicates an issue in your own webservice or API contracts.");
+            logErrorAndCallAbortAndClose(errorDetail: "JSON Parsing Failed.  This indicates an issue in your own webservice or API contracts.")
             return nil
         }
 
         let rawData = responseJSON as? [String: Any] ?? [:]
 
+        // Helper to parse boolean from Int (1/0) or Bool (true/false)
+        func parseBool(_ value: Any?, defaultValue: Bool) -> Bool {
+            if let intValue = value as? Int {
+                return intValue == 1
+            } else if let boolValue = value as? Bool {
+                return boolValue
+            }
+            return defaultValue
+        }
+
         // Extract key fields from server response
-        let success = (responseJSON["success"] as? Int ?? 0) == 1
-        let didError = (responseJSON["didError"] as? Int ?? 1) == 1
+        let success = parseBool(responseJSON["success"], defaultValue: false)
+        let didError = parseBool(responseJSON["didError"], defaultValue: true)
         let result = responseJSON["result"] as? [String: Any]
-        let livenessProven = (result?["livenessProven"] as? Int ?? 0) == 1
+        let livenessProven = parseBool(result?["livenessProven"], defaultValue: false)
         let responseBlob = responseJSON["responseBlob"] as? String ?? ""
         return FaceTecServerResponse(
             responseBlob: responseBlob,

@@ -34,27 +34,40 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
 
     // SDK Instance
     private FaceTecSDKInstance sdkInstance;
-    private boolean isInitialized = false;
-    private boolean hasInitError = false;
+
+    // State
+    private enum ButtonState {
+        INITIALIZING("initializing"),
+        READY("ready"),
+        ERROR("error");
+
+        private final String value;
+
+        ButtonState(String value) {
+            this.value = value;
+        }
+
+        public String getValue() {
+            return value;
+        }
+    }
+
+    private ButtonState currentState = ButtonState.INITIALIZING;
 
     // Listener
     private LivenessResultListener resultListener;
 
     // Configurable texts
-    private String initializingText = "Iniciando";
-    private String readyText = "Iniciar prueba de vida";
-    private String errorText = "Error de inicializacion";
-    private String permissionDeniedText = "Permiso de camara denegado";
+    private String initializingText = "Initializing";
+    private String readyText = "Start liveness check";
+    private String errorText = "Initialization error";
+    private String permissionDeniedText = "Camera permission denied";
 
-    // Colors
-    private static final int COLOR_GRAY = Color.parseColor("#808080");
-    private static final int COLOR_BLUE = Color.parseColor("#007AFF");
-    private static final int COLOR_RED = Color.parseColor("#FF3B30");
-    private static final int COLOR_WHITE = Color.WHITE;
-
-    // Custom colors (null means use default)
-    private Integer customErrorColor = null;
-    private Integer customInitializingColor = null;
+    // Android style props (received from React Native)
+    private Integer androidBackgroundColor = null;
+    private Float androidBorderRadius = null;
+    private Integer androidBorderColor = null;
+    private Float androidBorderWidth = null;
 
     // State flags
     private boolean hasPermissionError = false;
@@ -62,7 +75,8 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     public interface LivenessResultListener {
         void onLivenessSuccess(FaceTecSessionResult result, FaceTecServerResponse serverResponse);
         void onLivenessError(FaceTecSessionStatus status, FaceTecServerResponse serverResponse);
-        void onInitializationError(String error);
+        void onInitializationError(String error, ErrorType errorType);
+        void onStateChange(String state);
     }
 
     public RNFaceTecLivenessButton(@NonNull Context context) {
@@ -83,18 +97,19 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     private void init() {
         // Set initial appearance
         setText(initializingText);
-        setTextColor(COLOR_WHITE);
+        setTextColor(Color.WHITE);
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         setAllCaps(false);
         setGravity(Gravity.CENTER);
         setEnabled(false);
 
-        // Set rounded background (use custom color if available)
-        setButtonBackground(customInitializingColor != null ? customInitializingColor : COLOR_GRAY);
+        // Remove default button background - let React Native handle styles
+        setBackground(null);
+        setStateListAnimator(null); // Remove elevation animation
 
         // Set padding
-        int paddingHorizontal = dpToPx(24);
-        int paddingVertical = dpToPx(12);
+        int paddingHorizontal = (int) dpToPx(24);
+        int paddingVertical = (int) dpToPx(12);
         setPadding(paddingHorizontal, paddingVertical, paddingHorizontal, paddingVertical);
 
         // Set click listener
@@ -111,23 +126,32 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
         this.resultListener = listener;
     }
 
+    private void setState(ButtonState newState) {
+        if (currentState != newState) {
+            currentState = newState;
+            if (resultListener != null) {
+                resultListener.onStateChange(newState.getValue());
+            }
+        }
+    }
+
     public void setInitializingText(String text) {
         this.initializingText = text;
-        if (!isInitialized && !hasInitError) {
+        if (currentState == ButtonState.INITIALIZING) {
             setText(text);
         }
     }
 
     public void setReadyText(String text) {
         this.readyText = text;
-        if (isInitialized) {
+        if (currentState == ButtonState.READY) {
             setText(text);
         }
     }
 
     public void setErrorText(String text) {
         this.errorText = text;
-        if (hasInitError && !hasPermissionError) {
+        if (currentState == ButtonState.ERROR && !hasPermissionError) {
             setText(text);
         }
     }
@@ -139,62 +163,72 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
         }
     }
 
-    public void setInitializingBackgroundColor(String color) {
-        if (color != null && !color.isEmpty()) {
-            try {
-                this.customInitializingColor = Color.parseColor(color);
-                // If still initializing, update the background
-                if (!isInitialized && !hasInitError) {
-                    setButtonBackground(this.customInitializingColor);
-                }
-            } catch (IllegalArgumentException e) {
-                // Invalid color format, ignore
-                this.customInitializingColor = null;
-            }
-        } else {
-            this.customInitializingColor = null;
-        }
+    // Android style setters
+    public void setAndroidBackgroundColor(Integer color) {
+        this.androidBackgroundColor = color;
+        applyAndroidStyles();
     }
 
-    public void setErrorBackgroundColor(String color) {
-        if (color != null && !color.isEmpty()) {
-            try {
-                this.customErrorColor = Color.parseColor(color);
-                // If already in error state, update the background
-                if (hasInitError) {
-                    setButtonBackground(this.customErrorColor);
-                }
-            } catch (IllegalArgumentException e) {
-                // Invalid color format, reset to default
-                this.customErrorColor = null;
-                if (hasInitError) {
-                    setButtonBackground(getErrorColor());
-                }
-            }
-        } else {
-            this.customErrorColor = null;
-            // If already in error state, restore default error color
-            if (hasInitError) {
-                setButtonBackground(getErrorColor());
-            }
-        }
+    public void setAndroidBorderRadius(Float radius) {
+        this.androidBorderRadius = radius;
+        applyAndroidStyles();
     }
 
-    private int getErrorColor() {
-        return customErrorColor != null ? customErrorColor : COLOR_RED;
+    public void setAndroidBorderColor(Integer color) {
+        this.androidBorderColor = color;
+        applyAndroidStyles();
     }
 
-    private void setButtonBackground(int color) {
+    public void setAndroidBorderWidth(Float width) {
+        this.androidBorderWidth = width;
+        applyAndroidStyles();
+    }
+
+    private void applyAndroidStyles() {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setCornerRadius(dpToPx(8));
-        drawable.setColor(color);
+
+        // Apply background color
+        if (androidBackgroundColor != null) {
+            drawable.setColor(androidBackgroundColor);
+        } else {
+            drawable.setColor(Color.TRANSPARENT);
+        }
+
+        // Apply border radius - convert dp to pixels
+        final float cornerRadiusPx;
+        if (androidBorderRadius != null && androidBorderRadius > 0) {
+            cornerRadiusPx = dpToPx(androidBorderRadius);
+            drawable.setCornerRadius(cornerRadiusPx);
+        } else {
+            cornerRadiusPx = 0f;
+        }
+
+        // Apply border - convert dp to pixels
+        if (androidBorderColor != null && androidBorderWidth != null && androidBorderWidth > 0) {
+            drawable.setStroke((int) dpToPx(androidBorderWidth), androidBorderColor);
+        }
+
         setBackground(drawable);
+
+        // For API 21+, set up outline provider to clip properly with elevation
+        if (cornerRadiusPx > 0) {
+            setOutlineProvider(new android.view.ViewOutlineProvider() {
+                @Override
+                public void getOutline(android.view.View view, android.graphics.Outline outline) {
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), cornerRadiusPx);
+                }
+            });
+            setClipToOutline(true);
+        }
+
+        // Force redraw
+        invalidate();
     }
 
-    private int dpToPx(int dp) {
+    private float dpToPx(float dp) {
         float density = getResources().getDisplayMetrics().density;
-        return Math.round(dp * density);
+        return dp * density;
     }
 
     private void checkCameraPermissionAndInitialize() {
@@ -238,7 +272,19 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
                     CAMERA_PERMISSION_REQUEST_CODE
             );
         } else {
-            handlePermissionDenied();
+            // Activity is null - this is an internal/lifecycle error, not a permission issue
+            handleActivityNotAvailable();
+        }
+    }
+
+    private void handleActivityNotAvailable() {
+        post(() -> {
+            setText(errorText);
+            setEnabled(false);
+            setState(ButtonState.ERROR);
+        });
+        if (resultListener != null) {
+            resultListener.onInitializationError("Activity not available", ErrorType.INTERNAL_ERROR);
         }
     }
 
@@ -256,15 +302,14 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     }
 
     private void handlePermissionDenied() {
-        hasInitError = true;
         hasPermissionError = true;
         post(() -> {
             setText(permissionDeniedText);
-            setButtonBackground(getErrorColor());
             setEnabled(false);
+            setState(ButtonState.ERROR);
         });
         if (resultListener != null) {
-            resultListener.onInitializationError(permissionDeniedText);
+            resultListener.onInitializationError(permissionDeniedText, ErrorType.PERMISSION_DENIED);
         }
     }
 
@@ -288,45 +333,41 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
                         @Override
                         public void onSuccess(@NonNull FaceTecSDKInstance _sdkInstance) {
                             sdkInstance = _sdkInstance;
-                            isInitialized = true;
-                            hasInitError = false;
+                            hasPermissionError = false;
                             post(() -> {
                                 setText(readyText);
-                                // Don't override backgroundColor - let React Native control it via style prop
                                 setEnabled(true);
+                                setState(ButtonState.READY);
                             });
                         }
 
                         @Override
                         public void onError(@NonNull FaceTecInitializationError error) {
-                            hasInitError = true;
-                            isInitialized = false;
                             post(() -> {
                                 setText(errorText);
-                                setButtonBackground(getErrorColor());
                                 setEnabled(false);
+                                setState(ButtonState.ERROR);
                             });
                             if (resultListener != null) {
-                                resultListener.onInitializationError(error.name());
+                                resultListener.onInitializationError(error.name(), ErrorType.INIT_ERROR);
                             }
                         }
                     }
             );
         } catch (Exception e) {
-            hasInitError = true;
             post(() -> {
                 setText(errorText);
-                setButtonBackground(getErrorColor());
                 setEnabled(false);
+                setState(ButtonState.ERROR);
             });
             if (resultListener != null) {
-                resultListener.onInitializationError(e.getMessage());
+                resultListener.onInitializationError(e.getMessage(), ErrorType.INIT_ERROR);
             }
         }
     }
 
     private void startLiveness() {
-        if (sdkInstance == null || !isInitialized) {
+        if (sdkInstance == null || currentState != ButtonState.READY) {
             return;
         }
 
@@ -335,7 +376,7 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
 
         if (activity == null) {
             if (resultListener != null) {
-                resultListener.onInitializationError("No se pudo obtener la actividad");
+                resultListener.onInitializationError("Could not get activity", ErrorType.INTERNAL_ERROR);
             }
             return;
         }

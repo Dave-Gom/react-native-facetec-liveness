@@ -6,4 +6,6 @@ export type {
   ServerInfo,
   AdditionalSessionData,
   HttpCallInfo,
+  ErrorEvent,
+  ErrorType,
 } from './Facetec3DLivenessTestButton';

@@ -18,8 +18,6 @@ import okhttp3.MediaType;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 
-import com.facetec.BuildConfig;
-
 // Sample class for handling networking calls needed in order for FaceTec to function correctly.
 // In Your App, please use the networking constructs and protocols that meet your security requirements.
 //
@@ -92,8 +90,8 @@ public class SampleAppNetworkingRequest {
                 .header("X-Device-Key", Config.DeviceKeyIdentifier);
 
         // Developer Note: This is ONLY needed for calls to the FaceTec Testing API.
-        // You should remove this when using Your App connected to Your Webservice + FaceTec Server
-        if (BuildConfig.DEBUG) {
+        // Add header if using FaceTec Testing API endpoint (regardless of build type)
+        if (Config.YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT.contains("api.facetec.com")) {
             requestBuilder.header("X-Testing-API-Header", FaceTecSDK.getTestingAPIHeader());
         }
 
@@ -132,21 +130,30 @@ public class SampleAppNetworkingRequest {
     private void doRequestWithRetry() {
         SampleAppNetworkingLibExample.getApiClient().newCall(request).enqueue(new okhttp3.Callback() {
             @Override
-            public void onResponse(@NonNull Call call, @NonNull okhttp3.Response response) throws IOException {
+            public void onResponse(@NonNull Call call, @NonNull okhttp3.Response response) {
                 //
                 // Step 4:  Get the Response Blob and call processResponse on the Session Request Callback.
                 //
                 // - Call a convenience function that either gets a valid Response Blob, or handles the error and returns null.
                 // - Checks for null, indicating an error was detected and handled.
                 //
-                FaceTecServerResponse serverResponse = getResponseBlobOrHandleError(response, referencingProcessor, sessionRequestCallback);
-                if (serverResponse != null) {
-                    referencingProcessor.onResponseBlobReceived(serverResponse, sessionRequestCallback);
+                try {
+                    FaceTecServerResponse serverResponse = getResponseBlobOrHandleError(response, referencingProcessor, sessionRequestCallback);
+                    if (serverResponse != null) {
+                        referencingProcessor.onResponseBlobReceived(serverResponse, sessionRequestCallback);
+                    }
+                } catch (IOException e) {
+                    // Handle IOException the same way as onFailure - with retry logic
+                    handleNetworkError();
                 }
             }
 
             @Override
             public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                handleNetworkError();
+            }
+
+            private void handleNetworkError() {
                 if (errorCount < MAX_ERROR_RETRIES) {
                     errorCount++;
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
@@ -165,10 +172,11 @@ public class SampleAppNetworkingRequest {
                 String responseBody = response.body().string();
                 JSONObject responseJSON = new JSONObject(responseBody);
 
-                boolean success = responseJSON.optInt("success", 0) == 1;
-                boolean didError = responseJSON.optInt("didError", 1) == 1;
+                // Parse boolean from Int (1/0) or Bool (true/false)
+                boolean success = parseBooleanField(responseJSON, "success", false);
+                boolean didError = parseBooleanField(responseJSON, "didError", true);
                 JSONObject result = responseJSON.optJSONObject("result");
-                boolean livenessProven = result != null && result.optInt("livenessProven", 0) == 1;
+                boolean livenessProven = result != null && parseBooleanField(result, "livenessProven", false);
                 String responseBlob = responseJSON.optString("responseBlob", "");
 
                 response.close();
@@ -191,5 +199,19 @@ public class SampleAppNetworkingRequest {
         response.close();
     }
 
+    /**
+     * Parse boolean from Int (1/0) or Bool (true/false)
+     */
+    private static boolean parseBooleanField(JSONObject json, String field, boolean defaultValue) {
+        if (!json.has(field)) {
+            return defaultValue;
+        }
+        // Try as boolean first, then as int
+        try {
+            return json.getBoolean(field);
+        } catch (Exception e) {
+            return json.optInt(field, defaultValue ? 1 : 0) == 1;
+        }
+    }
 
 }

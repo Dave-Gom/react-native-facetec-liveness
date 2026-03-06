@@ -21,6 +21,27 @@ import org.json.JSONObject;
 
 import java.util.Map;
 
+/**
+ * Error types for onError callback
+ */
+enum ErrorType {
+    PERMISSION_DENIED("permission_denied"),
+    INIT_ERROR("init_error"),
+    SESSION_CANCELLED("session_cancelled"),
+    NETWORK_ERROR("network_error"),
+    INTERNAL_ERROR("internal_error");
+
+    private final String value;
+
+    ErrorType(String value) {
+        this.value = value;
+    }
+
+    public String getValue() {
+        return value;
+    }
+}
+
 public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLivenessButton> {
 
     public static final String REACT_CLASS = "FaceTecLivenessButton";
@@ -50,12 +71,38 @@ public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLiven
 
             @Override
             public void onLivenessError(FaceTecSessionStatus status, FaceTecServerResponse serverResponse) {
-                sendServerResponse(button, serverResponse);
+                if (serverResponse != null) {
+                    // We have server response, emit via onResponse
+                    sendServerResponse(button, serverResponse);
+                } else {
+                    // No server response - determine error type from session status
+                    ErrorType errorType;
+                    String message;
+
+                    if (status == FaceTecSessionStatus.USER_CANCELLED_FACE_SCAN ||
+                        status == FaceTecSessionStatus.USER_CANCELLED_ID_SCAN) {
+                        errorType = ErrorType.SESSION_CANCELLED;
+                        message = "User cancelled the session";
+                    } else if (status == FaceTecSessionStatus.REQUEST_ABORTED) {
+                        errorType = ErrorType.NETWORK_ERROR;
+                        message = "Session request was aborted";
+                    } else {
+                        errorType = ErrorType.NETWORK_ERROR;
+                        message = "Session ended without server response: " + status.name();
+                    }
+
+                    sendErrorEvent(button, errorType, message);
+                }
             }
 
             @Override
-            public void onInitializationError(String error) {
-                sendServerResponse(button, null);
+            public void onInitializationError(String error, ErrorType errorType) {
+                sendErrorEvent(button, errorType, error);
+            }
+
+            @Override
+            public void onStateChange(String state) {
+                sendStateChangeEvent(button, state);
             }
         });
 
@@ -83,10 +130,9 @@ public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLiven
                     JSONObject rawResult = rawData.getJSONObject("result");
                     WritableMap result = Arguments.createMap();
 
-                    // Convert livenessProven from 1/0 to boolean
-                    if (rawResult.has("livenessProven")) {
-                        result.putBoolean("livenessProven", rawResult.optInt("livenessProven", 0) == 1);
-                    }
+                    // Use already-parsed livenessProven from serverResponse (supports both boolean and int)
+                    result.putBoolean("livenessProven", serverResponse.isLivenessProven());
+
                     if (rawResult.has("ageV2GroupEnumInt")) {
                         result.putInt("ageV2GroupEnumInt", rawResult.optInt("ageV2GroupEnumInt"));
                     }
@@ -156,11 +202,34 @@ public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLiven
                 // Ignore JSON parsing errors
             }
         }
-        // If serverResponse is null, event remains empty (all fields undefined)
-
         ThemedReactContext context = (ThemedReactContext) button.getContext();
         context.getJSModule(RCTEventEmitter.class)
                 .receiveEvent(button.getId(), "onResponse", event);
+    }
+
+    /**
+     * Sends an error event to React Native
+     */
+    private void sendErrorEvent(RNFaceTecLivenessButton button, ErrorType errorType, String message) {
+        WritableMap event = Arguments.createMap();
+        event.putString("errorType", errorType.getValue());
+        event.putString("message", message);
+
+        ThemedReactContext context = (ThemedReactContext) button.getContext();
+        context.getJSModule(RCTEventEmitter.class)
+                .receiveEvent(button.getId(), "onError", event);
+    }
+
+    /**
+     * Sends a state change event to React Native
+     */
+    private void sendStateChangeEvent(RNFaceTecLivenessButton button, String state) {
+        WritableMap event = Arguments.createMap();
+        event.putString("state", state);
+
+        ThemedReactContext context = (ThemedReactContext) button.getContext();
+        context.getJSModule(RCTEventEmitter.class)
+                .receiveEvent(button.getId(), "onStateChange", event);
     }
 
     @ReactProp(name = "initializingText")
@@ -184,11 +253,6 @@ public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLiven
         }
     }
 
-    @ReactProp(name = "errorBackgroundColor")
-    public void setErrorBackgroundColor(RNFaceTecLivenessButton view, @Nullable String color) {
-        view.setErrorBackgroundColor(color);
-    }
-
     @ReactProp(name = "permissionDeniedText")
     public void setPermissionDeniedText(RNFaceTecLivenessButton view, @Nullable String text) {
         if (text != null) {
@@ -196,9 +260,25 @@ public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLiven
         }
     }
 
-    @ReactProp(name = "initializingBackgroundColor")
-    public void setInitializingBackgroundColor(RNFaceTecLivenessButton view, @Nullable String color) {
-        view.setInitializingBackgroundColor(color);
+    // Android-specific style props
+    @ReactProp(name = "androidBackgroundColor")
+    public void setAndroidBackgroundColor(RNFaceTecLivenessButton view, @Nullable Integer color) {
+        view.setAndroidBackgroundColor(color);
+    }
+
+    @ReactProp(name = "androidBorderRadius")
+    public void setAndroidBorderRadius(RNFaceTecLivenessButton view, float radius) {
+        view.setAndroidBorderRadius(radius);
+    }
+
+    @ReactProp(name = "androidBorderColor")
+    public void setAndroidBorderColor(RNFaceTecLivenessButton view, @Nullable Integer color) {
+        view.setAndroidBorderColor(color);
+    }
+
+    @ReactProp(name = "androidBorderWidth")
+    public void setAndroidBorderWidth(RNFaceTecLivenessButton view, float width) {
+        view.setAndroidBorderWidth(width);
     }
 
     @Override
@@ -208,6 +288,14 @@ public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLiven
                         MapBuilder.of(
                                 "phasedRegistrationNames",
                                 MapBuilder.of("bubbled", "onResponse")))
+                .put("onError",
+                        MapBuilder.of(
+                                "phasedRegistrationNames",
+                                MapBuilder.of("bubbled", "onError")))
+                .put("onStateChange",
+                        MapBuilder.of(
+                                "phasedRegistrationNames",
+                                MapBuilder.of("bubbled", "onStateChange")))
                 .build();
     }
 

@@ -28,7 +28,7 @@ public class Config {
     //
     // See https://dev.facetec.com/security-best-practices#server-rest-endpoint-security
     // See https://dev.facetec.com/configuration-options#zoom-architecture-and-data-flow
-    public static String YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT = "";
+    public static String YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT = "https://api.facetec.com/api/v4/biometrics/process-request";
 
     // -------------------------------------
     // This app can modify the customization to demonstrate different look/feel preferences

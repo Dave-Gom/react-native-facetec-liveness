@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   ColorValue,
   NativeSyntheticEvent,
   Platform,
+  processColor,
   requireNativeComponent,
   StyleProp,
   StyleSheet,
@@ -20,10 +21,10 @@ export interface LivenessResult {
 }
 
 /**
- * Informacion del servidor FaceTec
+ * Información del servidor FaceTec
  */
 export interface ServerInfo {
-  /** Version del SDK del servidor */
+  /** Versión del SDK del servidor */
   coreServerSDKVersion?: string;
   /** Modo del servidor (Development Only, Production, etc.) */
   mode?: string;
@@ -32,23 +33,23 @@ export interface ServerInfo {
 }
 
 /**
- * Datos adicionales de la sesion
+ * Datos adicionales de la sesión
  */
 export interface AdditionalSessionData {
-  /** ID de la aplicacion */
+  /** ID de la aplicación */
   appID?: string;
   /** Modelo del dispositivo */
   deviceModel?: string;
-  /** Version del SDK del dispositivo */
+  /** Versión del SDK del dispositivo */
   deviceSDKVersion?: string;
-  /** ID de instalacion */
+  /** ID de instalación */
   installationID?: string;
   /** Plataforma (ios, android) */
   platform?: string;
 }
 
 /**
- * Informacion de la llamada HTTP
+ * Información de la llamada HTTP
  */
 export interface HttpCallInfo {
   /** Fecha de la llamada */
@@ -57,19 +58,38 @@ export interface HttpCallInfo {
   epochSecond?: number;
   /** Path de la llamada */
   path?: string;
-  /** Metodo HTTP */
+  /** Método HTTP */
   requestMethod?: string;
-  /** ID de transaccion */
+  /** ID de transacción */
   tid?: string;
+}
+
+/**
+ * Tipos de error para el callback onError
+ */
+export type ErrorType =
+  | 'permission_denied'
+  | 'init_error'
+  | 'session_cancelled'
+  | 'network_error'
+  | 'internal_error';
+
+/**
+ * Evento de error emitido cuando ocurre un error sin respuesta del servidor
+ */
+export interface ErrorEvent {
+  /** Tipo de error */
+  errorType: ErrorType;
+  /** Mensaje descriptivo del error */
+  message: string;
 }
 
 /**
  * Respuesta del proceso de liveness - Contiene los datos directos del servidor FaceTec
  * Los campos con valores 1/0 son convertidos a booleanos
- * Si hay error de red o no hay respuesta del servidor, los campos seran undefined
  */
 export interface LivenessResponse {
-  /** Indica exito general del servidor */
+  /** Indica éxito general del servidor */
   success?: boolean;
   /** Indica si hubo error en el servidor */
   didError?: boolean;
@@ -77,70 +97,87 @@ export interface LivenessResponse {
   responseBlob?: string;
   /** Resultado del liveness */
   result?: LivenessResult;
-  /** Informacion del servidor */
+  /** Información del servidor */
   serverInfo?: ServerInfo;
-  /** Datos adicionales de la sesion */
+  /** Datos adicionales de la sesión */
   additionalSessionData?: AdditionalSessionData;
-  /** Informacion de la llamada HTTP */
+  /** Información de la llamada HTTP */
   httpCallInfo?: HttpCallInfo;
 }
+
+/**
+ * Estados posibles del botón
+ */
+export type ButtonState = 'initializing' | 'ready' | 'error';
 
 /**
  * Props del componente Facetec3DLivenessTestButton
  */
 export interface Facetec3DLivenessTestButtonProps {
   /**
-   * Callback que se ejecuta cuando el proceso de liveness termina
+   * Callback que se ejecuta cuando el proceso de liveness termina exitosamente
+   * con una respuesta del servidor
    * @param response - Objeto con los datos del servidor FaceTec (campos 1/0 convertidos a boolean)
    */
   onResponse: (response: LivenessResponse) => void;
 
   /**
-   * Estilos personalizados para el boton
+   * Callback que se ejecuta cuando ocurre un error sin respuesta del servidor
+   * Esto incluye: permiso denegado, error de inicialización, sesión cancelada, error de red
+   * @param error - Objeto con el tipo de error y mensaje descriptivo
+   */
+  onError?: (error: ErrorEvent) => void;
+
+  /**
+   * Estilos base del botón (se aplican siempre)
    */
   style?: StyleProp<ViewStyle>;
 
   /**
-   * Texto mostrado mientras el SDK se inicializa
-   * @default "Iniciando"
-   */
-  initializingText?: string;
-
-  /**
-   * Texto mostrado cuando el boton esta listo para iniciar
-   * @default "Iniciar prueba de vida"
-   */
-  readyText?: string;
-
-  /**
-   * Texto mostrado cuando hay un error de inicializacion
-   * @default "Error de inicializacion"
-   */
-  errorText?: string;
-
-  /**
-   * Texto mostrado cuando el permiso de camara es denegado
-   * @default "Permiso de camara denegado"
-   */
-  permissionDeniedText?: string;
-
-  /**
-   * Estilos personalizados para el boton cuando hay un error
-   * Si no se proporciona, se usara el color rojo por defecto
-   * Solo se aplica backgroundColor
+   * Estilos adicionales para el estado de error
+   * Se combinan con style cuando el botón está en estado de error
    */
   errorStyle?: StyleProp<ViewStyle>;
 
   /**
-   * Estilos personalizados para el boton mientras se inicializa
-   * Si no se proporciona, se usara el estilo de la prop style
-   * Solo se aplica backgroundColor
+   * Estilos adicionales para el estado de inicialización
+   * Se combinan con style mientras el SDK se inicializa
    */
   initializingStyle?: StyleProp<ViewStyle>;
+
+  /**
+   * Texto mostrado mientras el SDK se inicializa
+   * @default "Initializing"
+   */
+  initializingText?: string;
+
+  /**
+   * Texto mostrado cuando el botón está listo para iniciar
+   * @default "Start liveness check"
+   */
+  readyText?: string;
+
+  /**
+   * Texto mostrado cuando hay un error de inicialización
+   * @default "Initialization error"
+   */
+  errorText?: string;
+
+  /**
+   * Texto mostrado cuando el permiso de cámara es denegado
+   * @default "Camera permission denied"
+   */
+  permissionDeniedText?: string;
+
+  /**
+   * Callback opcional que se ejecuta cuando el estado del botón cambia
+   * @param state - El nuevo estado del botón
+   */
+  onStateChange?: (state: ButtonState) => void;
 }
 
 /**
- * Respuesta raw del nativo (antes de conversion)
+ * Respuesta raw del nativo (antes de conversión)
  */
 interface NativeLivenessResponse {
   success?: boolean;
@@ -156,17 +193,37 @@ interface NativeLivenessResponse {
 }
 
 /**
+ * Evento de error nativo
+ */
+interface NativeErrorEvent {
+  errorType: string;
+  message: string;
+}
+
+/**
+ * Evento de cambio de estado nativo
+ */
+interface NativeStateChangeEvent {
+  state: ButtonState;
+}
+
+/**
  * Props internas para el componente nativo
  */
 interface NativeFaceTecButtonProps {
   onResponse: (event: NativeSyntheticEvent<NativeLivenessResponse>) => void;
+  onError?: (event: NativeSyntheticEvent<NativeErrorEvent>) => void;
+  onStateChange?: (event: NativeSyntheticEvent<NativeStateChangeEvent>) => void;
   style?: StyleProp<ViewStyle>;
   initializingText?: string;
   readyText?: string;
   errorText?: string;
   permissionDeniedText?: string;
-  errorBackgroundColor?: ColorValue;
-  initializingBackgroundColor?: ColorValue;
+  // Android-specific style props (Android doesn't inherit RN styles)
+  androidBackgroundColor?: number;
+  androidBorderRadius?: number;
+  androidBorderColor?: number;
+  androidBorderWidth?: number;
 }
 
 // Componente nativo
@@ -177,34 +234,29 @@ const NativeFaceTecButton = requireNativeComponent<NativeFaceTecButtonProps>(
 /**
  * Facetec3DLivenessTestButton
  *
- * Boton que integra FaceTec 3D Liveness SDK para verificacion biometrica.
+ * Botón que integra FaceTec 3D Liveness SDK para verificación biométrica.
  *
- * El boton muestra diferentes estados:
- * - "Iniciando" (gris, deshabilitado) - Mientras se inicializa el SDK
- * - "Iniciar prueba de vida" (azul, habilitado) - Listo para usar
- * - "Error de inicializacion" (rojo, deshabilitado) - Si falla la inicializacion
+ * El botón muestra diferentes estados:
+ * - "Initializing" - Mientras se inicializa el SDK (aplica initializingStyle)
+ * - "Start liveness check" - Listo para usar (aplica solo style)
+ * - "Initialization error" - Si falla la inicialización (aplica errorStyle)
  *
  * @example
  * ```tsx
  * import { Facetec3DLivenessTestButton } from 'react-native-facetec';
  *
  * const MyComponent = () => {
- *   const handleResponse = (response) => {
- *     if (response.success && !response.didError && response.result?.livenessProven) {
- *       console.log('Liveness verificado exitosamente!');
- *     } else if (response.didError) {
- *       console.log('Error en el servidor');
- *     } else if (response.success === undefined) {
- *       console.log('Sin respuesta del servidor (error de red o cancelado)');
- *     } else {
- *       console.log('Liveness no verificado');
- *     }
- *   };
- *
  *   return (
  *     <Facetec3DLivenessTestButton
- *       onResponse={handleResponse}
- *       style={{ width: 250, height: 50 }}
+ *       onResponse={(response) => {
+ *         if (response.success && response.result?.livenessProven) {
+ *           console.log('Liveness verificado!');
+ *         }
+ *       }}
+ *       onError={(error) => console.log('Error:', error.errorType)}
+ *       style={{ width: 250, height: 50, backgroundColor: '#007AFF' }}
+ *       errorStyle={{ backgroundColor: '#FF3B30', borderRadius: 25 }}
+ *       initializingStyle={{ backgroundColor: '#808080' }}
  *     />
  *   );
  * };
@@ -214,69 +266,125 @@ export const Facetec3DLivenessTestButton: React.FC<
   Facetec3DLivenessTestButtonProps
 > = ({
   onResponse,
+  onError,
   style,
-  initializingText = 'Iniciando',
-  readyText = 'Iniciar prueba de vida',
-  errorText = 'Error de inicializacion',
-  permissionDeniedText = 'Permiso de camara denegado',
   errorStyle,
   initializingStyle,
+  initializingText = 'Initializing',
+  readyText = 'Start liveness check',
+  errorText = 'Initialization error',
+  permissionDeniedText = 'Camera permission denied',
+  onStateChange: onStateChangeProp,
 }) => {
-  // Extract backgroundColor from errorStyle if provided
-  const errorBackgroundColor = useMemo(() => {
-    if (!errorStyle) return undefined;
-    const flatStyle = StyleSheet.flatten(errorStyle);
-    return flatStyle?.backgroundColor as ColorValue | undefined;
-  }, [errorStyle]);
+  // Track button state internally
+  const [buttonState, setButtonState] = useState<ButtonState>('initializing');
 
-  // Extract backgroundColor from initializingStyle if provided, fallback to style
-  const initializingBackgroundColor = useMemo(() => {
-    if (initializingStyle) {
-      const flatStyle = StyleSheet.flatten(initializingStyle);
-      return flatStyle?.backgroundColor as ColorValue | undefined;
+  // Compute the combined style based on current state
+  const computedStyle = useMemo(() => {
+    const baseStyles = [styles.button, style];
+
+    switch (buttonState) {
+      case 'error':
+        return [...baseStyles, styles.errorDefault, errorStyle];
+      case 'initializing':
+        return [...baseStyles, styles.initializingDefault, initializingStyle];
+      case 'ready':
+      default:
+        return baseStyles;
     }
-    // Fallback to style's backgroundColor
-    if (style) {
-      const flatStyle = StyleSheet.flatten(style);
-      return flatStyle?.backgroundColor as ColorValue | undefined;
-    }
-    return undefined;
-  }, [initializingStyle, style]);
+  }, [buttonState, style, errorStyle, initializingStyle]);
+
+  // Extract style props for Android (Android doesn't inherit RN styles on native views)
+  const androidStyleProps = useMemo(() => {
+    if (Platform.OS !== 'android') return {};
+
+    // Cast to ViewStyle since StyleSheet.flatten returns a ViewStyle when flattening valid styles
+    const flatStyle = StyleSheet.flatten(computedStyle) as ViewStyle | undefined;
+
+    if (!flatStyle) return {};
+
+    return {
+      androidBackgroundColor: flatStyle.backgroundColor
+        ? (processColor(flatStyle.backgroundColor as ColorValue) as number)
+        : undefined,
+      androidBorderRadius:
+        typeof flatStyle.borderRadius === 'number'
+          ? flatStyle.borderRadius
+          : undefined,
+      androidBorderColor: flatStyle.borderColor
+        ? (processColor(flatStyle.borderColor as ColorValue) as number)
+        : undefined,
+      androidBorderWidth:
+        typeof flatStyle.borderWidth === 'number'
+          ? flatStyle.borderWidth
+          : undefined,
+    };
+  }, [computedStyle]);
+
+  /**
+   * Handle state change from native
+   */
+  const handleStateChange = useCallback(
+    (event: NativeSyntheticEvent<NativeStateChangeEvent>) => {
+      const newState = event.nativeEvent.state;
+      setButtonState(newState);
+      onStateChangeProp?.(newState);
+    },
+    [onStateChangeProp],
+  );
 
   /**
    * Maneja el evento nativo y lo transforma al callback de JS
    * Los campos ya vienen convertidos a boolean desde el lado nativo
    */
-  const handleNativeResponse = (
-    event: NativeSyntheticEvent<NativeLivenessResponse>,
-  ) => {
-    const nativeEvent = event.nativeEvent;
+  const handleNativeResponse = useCallback(
+    (event: NativeSyntheticEvent<NativeLivenessResponse>) => {
+      const nativeEvent = event.nativeEvent;
 
-    // Pasar directamente los datos del servidor FaceTec
-    // Los campos 1/0 ya estan convertidos a boolean en el lado nativo
-    const response: LivenessResponse = {
-      success: nativeEvent.success,
-      didError: nativeEvent.didError,
-      responseBlob: nativeEvent.responseBlob,
-      result: nativeEvent.result,
-      serverInfo: nativeEvent.serverInfo,
-      additionalSessionData: nativeEvent.additionalSessionData,
-      httpCallInfo: nativeEvent.httpCallInfo,
-    };
+      const response: LivenessResponse = {
+        success: nativeEvent.success,
+        didError: nativeEvent.didError,
+        responseBlob: nativeEvent.responseBlob,
+        result: nativeEvent.result,
+        serverInfo: nativeEvent.serverInfo,
+        additionalSessionData: nativeEvent.additionalSessionData,
+        httpCallInfo: nativeEvent.httpCallInfo,
+      };
 
-    onResponse(response);
-  };
+      onResponse(response);
+    },
+    [onResponse],
+  );
+
+  /**
+   * Maneja los errores nativos (sin respuesta del servidor)
+   */
+  const handleNativeError = useCallback(
+    (event: NativeSyntheticEvent<NativeErrorEvent>) => {
+      if (!onError) return;
+
+      const nativeEvent = event.nativeEvent;
+      const errorEvent: ErrorEvent = {
+        errorType: nativeEvent.errorType as ErrorType,
+        message: nativeEvent.message,
+      };
+
+      onError(errorEvent);
+    },
+    [onError],
+  );
 
   return (
     <NativeFaceTecButton
-      style={[styles.button, style]}
+      style={computedStyle}
       onResponse={handleNativeResponse}
+      onError={onError ? handleNativeError : undefined}
+      onStateChange={handleStateChange}
       initializingText={initializingText}
       readyText={readyText}
       errorText={errorText}
       permissionDeniedText={permissionDeniedText}
-      errorBackgroundColor={errorBackgroundColor}
-      initializingBackgroundColor={initializingBackgroundColor}
+      {...androidStyleProps}
     />
   );
 };
@@ -294,6 +402,14 @@ const styles = StyleSheet.create({
         elevation: 2,
       },
     }),
+  },
+  // Default styles for error state (can be overridden by errorStyle prop)
+  errorDefault: {
+    backgroundColor: '#FF3B30',
+  },
+  // Default styles for initializing state (can be overridden by initializingStyle prop)
+  initializingDefault: {
+    backgroundColor: '#808080',
   },
 });
 

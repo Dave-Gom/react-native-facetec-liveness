@@ -84,13 +84,13 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
     private String getMessageForStatus(FaceTecSessionStatus status) {
         switch (status) {
             case SESSION_COMPLETED:
-                return "Liveness completado exitosamente";
+                return "Liveness completed successfully";
             case USER_CANCELLED_FACE_SCAN:
-                return "Usuario cancelo el proceso";
+                return "User cancelled the process";
             case REQUEST_ABORTED:
-                return "Request abortada";
+                return "Request aborted";
             default:
-                return "Estado: " + status.name();
+                return "Status: " + status.name();
         }
     }
 
