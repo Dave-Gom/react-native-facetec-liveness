@@ -24,13 +24,23 @@ class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSess
     // Store the server response
     var lastServerResponse: FaceTecServerResponse?
 
+    // Reference to the active networking request (for cancellation)
+    private var activeNetworkingRequest: SampleAppNetworkingRequest?
+
     func onFaceTecExit(sessionResult: any FaceTecSessionResult) {
         // Pass the response and then clear to prevent memory leak
         let response = lastServerResponse
         lastServerResponse = nil  // Clear reference after use
+        activeNetworkingRequest = nil
         onComplete?(sessionResult, response)
     }
-    
+
+    /// Cancel any in-flight network requests for this session.
+    func cancel() {
+        activeNetworkingRequest?.cancel()
+        activeNetworkingRequest = nil
+    }
+
     // onSessionRequest is the core method called by the FaceTec SDK when a request needs to be processed by the FaceTec SDK.
     // Your code must retrieve the Session Request Blob and send to your FaceTec Server.
     // Your code must retrieve the Response Blob from FaceTec Server and call processResponse, passing in the Response Blob.
@@ -38,6 +48,7 @@ class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSess
         // When you receive a Session Request Blob, call your webservice API that handles this object and passes it to FaceTec Server.
         // SampleAppNetworkingRequest is a demonstration class for making a networking call that passes the Session Request Blob, and handles the response.
         let request = SampleAppNetworkingRequest(referencingProcessor: self, sessionRequestCallback: sessionRequestCallback)
+        activeNetworkingRequest = request
         request.send(sessionRequestBlob: sessionRequestBlob)
     }
 

@@ -36,12 +36,28 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
     let sessionRequestCallback: FaceTecSessionRequestProcessorCallback
     var errorCount: Int = 0
 
+    // Cancellation flag - only accessed from main thread (URLSession delegate queue is main)
+    private var cancelled = false
+
     static let MAX_ERROR_RETRIES = 2
-    
+
     init(referencingProcessor: SessionRequestProcessor, sessionRequestCallback: FaceTecSessionRequestProcessorCallback) {
         self.referencingProcessor = referencingProcessor
         self.sessionRequestCallback = sessionRequestCallback
         super.init()
+    }
+
+    /// Cancel the in-flight request and prevent retries.
+    /// Must be called from the main thread.
+    func cancel() {
+        assert(Thread.isMainThread, "cancel() must be called from the main thread")
+        cancelled = true
+        currentTask?.cancel()
+        currentTask = nil
+        if backgroundTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            backgroundTaskID = .invalid
+        }
     }
     
     func send(sessionRequestBlob: String) {
@@ -98,6 +114,8 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
         // put to background
         backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "SampleAppNetworkingRequest") { [weak self] in
             guard let self = self else { return }
+            // Mark as cancelled to prevent retry handlers from firing after this
+            self.cancelled = true
             // Cancel the current network request if background task expires
             self.currentTask?.cancel()
             self.currentTask = nil
@@ -114,7 +132,7 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
         // - For error cases, abortOnCatastrophicError is called as this would indicate a networking issue on the User device or network, or an error in Your Webservice.
         //
         doSessionRequestWithRetry(session: session, request: request, completionHandler: { [weak self] data, response, error in
-            guard let self = self else { return }
+            guard let self = self, !self.cancelled else { return }
 
             // Ensure that the background task is ended when the session finishes
             defer {
@@ -139,11 +157,15 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
     }
     
     private func doSessionRequestWithRetry(session: URLSession, request: URLRequest, completionHandler: @escaping (Data?, URLResponse?, (any Error)?) -> Void) {
+        if cancelled { return }
+
         let networkRequest = session.dataTask(with: request as URLRequest, completionHandler: { [weak self] data, response, error in
             guard let self = self else { return }
 
             // Clear task reference on completion
             self.currentTask = nil
+
+            if self.cancelled { return }
 
             if (error != nil && self.errorCount < SampleAppNetworkingRequest.MAX_ERROR_RETRIES) {
                 self.errorCount += 1

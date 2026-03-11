@@ -35,6 +35,10 @@ public class SampleAppNetworkingRequest {
     private final Request request;
     private int errorCount = 0;
 
+    // Cancellation support
+    private volatile boolean cancelled = false;
+    private volatile Call currentCall = null;
+
     private SampleAppNetworkingRequest(
             @NonNull SessionRequestProcessor referencingProcessor,
             @NonNull FaceTecSessionRequestProcessor.Callback sessionRequestCallback,
@@ -45,7 +49,18 @@ public class SampleAppNetworkingRequest {
         this.request = request;
     }
 
-    public static void send(
+    /**
+     * Cancel the in-flight request and prevent retries.
+     */
+    public void cancel() {
+        cancelled = true;
+        Call call = currentCall;
+        if (call != null) {
+            call.cancel();
+        }
+    }
+
+    public static SampleAppNetworkingRequest send(
             @NonNull SessionRequestProcessor referencingProcessor,
             @NonNull String sessionRequestBlob,
             @NonNull FaceTecSessionRequestProcessor.Callback sessionRequestCallback
@@ -121,6 +136,7 @@ public class SampleAppNetworkingRequest {
                 request
         );
         networkingRequest.doRequestWithRetry();
+        return networkingRequest;
     }
 
     /**
@@ -128,9 +144,21 @@ public class SampleAppNetworkingRequest {
      * Retries up to MAX_ERROR_RETRIES times on network failures.
      */
     private void doRequestWithRetry() {
-        SampleAppNetworkingLibExample.getApiClient().newCall(request).enqueue(new okhttp3.Callback() {
+        if (cancelled) {
+            return;
+        }
+
+        currentCall = null;
+        Call call = SampleAppNetworkingLibExample.getApiClient().newCall(request);
+        currentCall = call;
+
+        call.enqueue(new okhttp3.Callback() {
             @Override
             public void onResponse(@NonNull Call call, @NonNull okhttp3.Response response) {
+                if (cancelled) {
+                    response.close();
+                    return;
+                }
                 //
                 // Step 4:  Get the Response Blob and call processResponse on the Session Request Callback.
                 //
@@ -139,21 +167,28 @@ public class SampleAppNetworkingRequest {
                 //
                 try {
                     FaceTecServerResponse serverResponse = getResponseBlobOrHandleError(response, referencingProcessor, sessionRequestCallback);
-                    if (serverResponse != null) {
+                    if (serverResponse != null && !cancelled) {
                         referencingProcessor.onResponseBlobReceived(serverResponse, sessionRequestCallback);
                     }
                 } catch (IOException e) {
-                    // Handle IOException the same way as onFailure - with retry logic
-                    handleNetworkError();
+                    if (!cancelled) {
+                        handleNetworkError();
+                    }
                 }
             }
 
             @Override
             public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                if (cancelled) {
+                    return;
+                }
                 handleNetworkError();
             }
 
             private void handleNetworkError() {
+                if (cancelled) {
+                    return;
+                }
                 if (errorCount < MAX_ERROR_RETRIES) {
                     errorCount++;
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {

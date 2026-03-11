@@ -24,12 +24,26 @@ final public class SessionRequestProcessor implements FaceTecSessionRequestProce
     // Instance-based server response storage (no cross-session contamination)
     private volatile FaceTecServerResponse serverResponse = null;
 
+    // Reference to the active networking request (for cancellation)
+    private volatile SampleAppNetworkingRequest activeNetworkingRequest = null;
+
     public FaceTecServerResponse getServerResponse() {
         return serverResponse;
     }
 
     void clearServerResponse() {
         serverResponse = null;
+    }
+
+    /**
+     * Cancel any in-flight network requests for this session.
+     */
+    public void cancel() {
+        SampleAppNetworkingRequest request = activeNetworkingRequest;
+        if (request != null) {
+            request.cancel();
+        }
+        activeNetworkingRequest = null;
     }
 
     // onSessionRequest is the core method called by the FaceTec SDK when a request needs to be processed by the FaceTec SDK.
@@ -40,7 +54,7 @@ final public class SessionRequestProcessor implements FaceTecSessionRequestProce
     public void onSessionRequest(@NonNull String sessionRequestBlob, @NonNull Callback sessionRequestCallback) {
         // When you receive a Session Request Blob, call your webservice API that handles this object and passes it to FaceTec Server.
         // SampleAppNetworkingRequest is a demonstration class for making a networking call that passes the Session Request Blob, and handles the response.
-        SampleAppNetworkingRequest.send(this, sessionRequestBlob, sessionRequestCallback);
+        activeNetworkingRequest = SampleAppNetworkingRequest.send(this, sessionRequestBlob, sessionRequestCallback);
     }
 
     // When the Response Blob is received, call processResponse with it.
