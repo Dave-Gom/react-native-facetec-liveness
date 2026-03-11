@@ -21,27 +21,15 @@ import com.facetec.sdk.FaceTecSessionRequestProcessor;
 // - Adding code that modifies any App UI (Yours or FaceTec's) is not allowed.  Only add code that modifies your own App UI once the FaceTec UI is closed.
 final public class SessionRequestProcessor implements FaceTecSessionRequestProcessor {
 
-    // Store the last server response (static to be accessible from handleActivityResult)
-    // Using volatile + synchronized for thread-safety across multiple sessions
-    private static volatile FaceTecServerResponse lastServerResponse = null;
-    private static final Object lock = new Object();
+    // Instance-based server response storage (no cross-session contamination)
+    private volatile FaceTecServerResponse serverResponse = null;
 
-    public static FaceTecServerResponse getLastServerResponse() {
-        synchronized (lock) {
-            return lastServerResponse;
-        }
+    public FaceTecServerResponse getServerResponse() {
+        return serverResponse;
     }
 
-    public static void clearLastServerResponse() {
-        synchronized (lock) {
-            lastServerResponse = null;
-        }
-    }
-
-    private static void setLastServerResponse(FaceTecServerResponse response) {
-        synchronized (lock) {
-            lastServerResponse = response;
-        }
+    void clearServerResponse() {
+        serverResponse = null;
     }
 
     // onSessionRequest is the core method called by the FaceTec SDK when a request needs to be processed by the FaceTec SDK.
@@ -59,8 +47,8 @@ final public class SessionRequestProcessor implements FaceTecSessionRequestProce
     // Please note that onResponseBlobReceived is a convenience function set up on this class,
     // so that this function can be called asynchronously once you receive the Response Blob.
     public void onResponseBlobReceived(@NonNull FaceTecServerResponse serverResponse, @NonNull Callback sessionRequestCallback) {
-        // Store the server response for later retrieval (thread-safe)
-        setLastServerResponse(serverResponse);
+        // Store the server response on this instance (no static shared state)
+        this.serverResponse = serverResponse;
         sessionRequestCallback.processResponse(serverResponse.getResponseBlob());
     }
 

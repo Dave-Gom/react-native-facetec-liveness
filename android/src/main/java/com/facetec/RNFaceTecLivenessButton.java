@@ -35,6 +35,10 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     // SDK Instance
     private FaceTecSDKInstance sdkInstance;
 
+    // Active session processor (for response retrieval)
+    // Only accessed from the main/UI thread
+    private SessionRequestProcessor activeProcessor = null;
+
     // State
     private enum ButtonState {
         INITIALIZING("initializing"),
@@ -384,7 +388,8 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
         // Register this button with the module to receive activity results
         FaceTecLivenessModule.setCurrentButton(this);
 
-        sdkInstance.start3DLiveness(activity, new SessionRequestProcessor());
+        activeProcessor = new SessionRequestProcessor();
+        sdkInstance.start3DLiveness(activity, activeProcessor);
     }
 
     private Activity getActivityFromContext() {
@@ -437,8 +442,10 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
 
         FaceTecSessionStatus status = result.getStatus();
 
-        // Get the stored server response
-        FaceTecServerResponse serverResponse = SessionRequestProcessor.getLastServerResponse();
+        // Get the server response from the active processor instance
+        FaceTecServerResponse serverResponse = activeProcessor != null
+                ? activeProcessor.getServerResponse()
+                : null;
 
         if (status == FaceTecSessionStatus.SESSION_COMPLETED) {
             // Session completed - check server response for actual liveness result
@@ -458,7 +465,10 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
             }
         }
 
-        // Clear the stored response after use
-        SessionRequestProcessor.clearLastServerResponse();
+        // Clear the processor after use to prevent stale reuse
+        if (activeProcessor != null) {
+            activeProcessor.clearServerResponse();
+        }
+        activeProcessor = null;
     }
 }
