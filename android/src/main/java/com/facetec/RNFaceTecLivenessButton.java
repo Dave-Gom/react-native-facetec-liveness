@@ -385,6 +385,11 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
             return;
         }
 
+        // Cancel any previous session's in-flight requests
+        if (activeProcessor != null) {
+            activeProcessor.cancel();
+        }
+
         // Register this button with the module to receive activity results
         FaceTecLivenessModule.setCurrentButton(this);
 
@@ -448,8 +453,10 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
                 : null;
 
         if (status == FaceTecSessionStatus.SESSION_COMPLETED) {
-            // Session completed - check server response for actual liveness result
-            // Use livenessProven, success, and !didError to determine if liveness passed
+            // Session completed - cancel any still-in-flight request and check server response
+            if (activeProcessor != null) {
+                activeProcessor.cancel();
+            }
             if (resultListener != null) {
                 if (serverResponse != null && serverResponse.isLivenessProven() && serverResponse.isSuccess() && !serverResponse.isDidError()) {
                     resultListener.onLivenessSuccess(result, serverResponse);
@@ -460,6 +467,10 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
             }
         } else {
             // Session did not complete (user cancelled, error, etc.)
+            // Cancel any in-flight requests since the session is over
+            if (activeProcessor != null) {
+                activeProcessor.cancel();
+            }
             if (resultListener != null) {
                 resultListener.onLivenessError(status, serverResponse);
             }

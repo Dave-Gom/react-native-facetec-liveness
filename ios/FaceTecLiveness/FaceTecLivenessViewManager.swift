@@ -80,6 +80,8 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
     private weak var faceTecViewController: UIViewController?
     private var hasPermissionError = false
     private var isSessionActive = false
+    private var activeProcessor: SessionRequestProcessor?
+    private var livenessContainerView: UIView?
 
     // MARK: - Init
 
@@ -205,7 +207,7 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.backgroundColor = .black
-        container.tag = 999
+        self.livenessContainerView = container
 
         parentVC.view.addSubview(container)
 
@@ -216,17 +218,19 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
             container.bottomAnchor.constraint(equalTo: parentVC.view.bottomAnchor)
         ])
 
+        // Cancel any previous session's in-flight requests
+        activeProcessor?.cancel()
+
         // Crear processor con callback
         let processor = SessionRequestProcessor()
-        processor.onComplete = { [weak self, weak parentVC] result, serverResponse in
+        activeProcessor = processor
+        processor.onComplete = { [weak self, weak parentVC, weak container] result, serverResponse in
             DispatchQueue.main.async {
                 if let self = self {
                     self.handleLivenessResult(result, serverResponse: serverResponse, parentVC: parentVC)
                 } else {
                     // Self was deallocated - still perform cleanup to avoid orphan UI
-                    if let parentVC = parentVC {
-                        parentVC.view.viewWithTag(999)?.removeFromSuperview()
-                    }
+                    container?.removeFromSuperview()
                 }
             }
         }
@@ -254,6 +258,7 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
 
         // If we have a server response, emit it via onResponse
         if let serverResponse = serverResponse {
+            activeProcessor = nil
             emitServerResponse(serverResponse: serverResponse)
             return
         }
@@ -261,6 +266,10 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
         // No server response - determine error type from session status
         let status = result.sessionStatus
         let statusString = String(describing: status)
+
+        // Cancel any in-flight requests since the session ended without a response
+        activeProcessor?.cancel()
+        activeProcessor = nil
 
         // Check if status indicates user cancellation
         if statusString.lowercased().contains("cancelled") || statusString.lowercased().contains("canceled") {
@@ -273,8 +282,6 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
     }
 
     private func cleanup(parentVC: UIViewController?) {
-        guard let parentVC = parentVC else { return }
-
         // Remover solo el FaceTec VC que agregamos
         if let faceTecVC = faceTecViewController {
             faceTecVC.willMove(toParent: nil)
@@ -283,8 +290,9 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
             faceTecViewController = nil
         }
 
-        // Remover contenedor
-        parentVC.view.viewWithTag(999)?.removeFromSuperview()
+        // Remover contenedor usando referencia directa (no magic tag)
+        livenessContainerView?.removeFromSuperview()
+        livenessContainerView = nil
     }
 
     // MARK: - React Native Event Emission
