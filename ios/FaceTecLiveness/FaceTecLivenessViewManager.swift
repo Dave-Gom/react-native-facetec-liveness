@@ -182,7 +182,12 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
             self.currentState = .error
         }
 
-        emitError(errorType: .initError, message: String(describing: error))
+        let errorString = String(describing: error)
+        let errorType: ErrorType = errorString.lowercased().contains("devicenotsupported")
+            ? .deviceNotSupported
+            : .initError
+
+        emitError(errorType: errorType, message: errorString)
     }
 
     // MARK: - Button Action
@@ -301,6 +306,7 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
     private enum ErrorType: String {
         case permissionDenied = "permission_denied"
         case initError = "init_error"
+        case deviceNotSupported = "device_not_supported"
         case sessionCancelled = "session_cancelled"
         case networkError = "network_error"
         case internalError = "internal_error"

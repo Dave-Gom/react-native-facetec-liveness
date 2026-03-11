@@ -27,6 +27,7 @@ import java.util.Map;
 enum ErrorType {
     PERMISSION_DENIED("permission_denied"),
     INIT_ERROR("init_error"),
+    DEVICE_NOT_SUPPORTED("device_not_supported"),
     SESSION_CANCELLED("session_cancelled"),
     NETWORK_ERROR("network_error"),
     INTERNAL_ERROR("internal_error");

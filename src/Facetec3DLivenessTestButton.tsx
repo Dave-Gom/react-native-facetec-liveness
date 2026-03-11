@@ -70,6 +70,7 @@ export interface HttpCallInfo {
 export type ErrorType =
   | 'permission_denied'
   | 'init_error'
+  | 'device_not_supported'
   | 'session_cancelled'
   | 'network_error'
   | 'internal_error';

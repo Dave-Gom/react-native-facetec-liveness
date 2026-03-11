@@ -353,7 +353,10 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
                                 setState(ButtonState.ERROR);
                             });
                             if (resultListener != null) {
-                                resultListener.onInitializationError(error.name(), ErrorType.INIT_ERROR);
+                                ErrorType errorType = error.name().toLowerCase().contains("device_not_supported")
+                                    ? ErrorType.DEVICE_NOT_SUPPORTED
+                                    : ErrorType.INIT_ERROR;
+                                resultListener.onInitializationError(error.name(), errorType);
                             }
                         }
                     }
