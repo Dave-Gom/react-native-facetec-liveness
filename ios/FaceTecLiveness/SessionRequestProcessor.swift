@@ -18,6 +18,11 @@ import FaceTecSDK
 // - Adding code that modifies any App UI (Yours or FaceTec's) is not allowed.  Only add code that modifies your own App UI once the FaceTec UI is closed.
 class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSessionTaskDelegate {
 
+    // FaceTec configuration (passed from button props)
+    private let deviceKeyIdentifier: String
+    private let apiEndpoint: String
+    private let customHeaders: [String: String]
+
     // Closure para comunicar el resultado al ViewController
     var onComplete: ((FaceTecSessionResult, FaceTecServerResponse?) -> Void)?
 
@@ -26,6 +31,13 @@ class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSess
 
     // Reference to the active networking request (for cancellation)
     private var activeNetworkingRequest: SampleAppNetworkingRequest?
+
+    init(deviceKeyIdentifier: String, apiEndpoint: String, customHeaders: [String: String] = [:]) {
+        self.deviceKeyIdentifier = deviceKeyIdentifier
+        self.apiEndpoint = apiEndpoint
+        self.customHeaders = customHeaders
+        super.init()
+    }
 
     func onFaceTecExit(sessionResult: any FaceTecSessionResult) {
         // Pass the response and then clear to prevent memory leak
@@ -47,7 +59,7 @@ class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSess
     func onSessionRequest(sessionRequestBlob: String, sessionRequestCallback: FaceTecSessionRequestProcessorCallback) {
         // When you receive a Session Request Blob, call your webservice API that handles this object and passes it to FaceTec Server.
         // SampleAppNetworkingRequest is a demonstration class for making a networking call that passes the Session Request Blob, and handles the response.
-        let request = SampleAppNetworkingRequest(referencingProcessor: self, sessionRequestCallback: sessionRequestCallback)
+        let request = SampleAppNetworkingRequest(referencingProcessor: self, sessionRequestCallback: sessionRequestCallback, deviceKeyIdentifier: deviceKeyIdentifier, apiEndpoint: apiEndpoint, customHeaders: customHeaders)
         activeNetworkingRequest = request
         request.send(sessionRequestBlob: sessionRequestBlob)
     }
@@ -60,19 +72,19 @@ class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSess
         self.lastServerResponse = serverResponse
         sessionRequestCallback.processResponse(serverResponse.responseBlob)
     }
-    
+
     // When upload progress is received from your webservice, call updateProgress to update the Progress Bar state.
     // Please note that onUploadProgress is a convenience function set up on this class,
     // so that this function can be called asynchronously when your networking code receives an upload progress event.
     func onUploadProgress(progress: Float, sessionRequestCallback: FaceTecSessionRequestProcessorCallback) {
         sessionRequestCallback.updateProgress(progress)
     }
-    
+
     // Calling abortOnCatastrophicError is not allowed except for catastrophic network failures.
     // Calling abortOnCatastrophicError to exit the FaceTec UI with custom logic is not allowed.
     func onCatastrophicNetworkError(sessionRequestCallback: FaceTecSessionRequestProcessorCallback) {
         sessionRequestCallback.abortOnCatastrophicError()
     }
-    
+
 
 }

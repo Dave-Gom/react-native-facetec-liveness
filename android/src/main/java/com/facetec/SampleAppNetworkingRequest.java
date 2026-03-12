@@ -12,6 +12,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.Map;
 
 import okhttp3.Call;
 import okhttp3.MediaType;
@@ -63,7 +65,20 @@ public class SampleAppNetworkingRequest {
     public static SampleAppNetworkingRequest send(
             @NonNull SessionRequestProcessor referencingProcessor,
             @NonNull String sessionRequestBlob,
-            @NonNull FaceTecSessionRequestProcessor.Callback sessionRequestCallback
+            @NonNull FaceTecSessionRequestProcessor.Callback sessionRequestCallback,
+            @NonNull String deviceKeyIdentifier,
+            @NonNull String apiEndpoint
+    ) {
+        return send(referencingProcessor, sessionRequestBlob, sessionRequestCallback, deviceKeyIdentifier, apiEndpoint, Collections.emptyMap());
+    }
+
+    public static SampleAppNetworkingRequest send(
+            @NonNull SessionRequestProcessor referencingProcessor,
+            @NonNull String sessionRequestBlob,
+            @NonNull FaceTecSessionRequestProcessor.Callback sessionRequestCallback,
+            @NonNull String deviceKeyIdentifier,
+            @NonNull String apiEndpoint,
+            @NonNull Map<String, String> customHeaders
     ) {
         //
         // Step 1: Construct the payload.
@@ -97,17 +112,22 @@ public class SampleAppNetworkingRequest {
         //
 
         Request.Builder requestBuilder = new Request.Builder()
-                .url(Config.YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT)
+                .url(apiEndpoint)
                 .header("Content-Type", "application/json")
 
                 // Developer Note: This is ONLY needed for calls to the FaceTec Testing API.
                 // You should remove this when using Your App connected to Your Webservice + FaceTec Server
-                .header("X-Device-Key", Config.DeviceKeyIdentifier);
+                .header("X-Device-Key", deviceKeyIdentifier);
 
         // Developer Note: This is ONLY needed for calls to the FaceTec Testing API.
         // Add header if using FaceTec Testing API endpoint (regardless of build type)
-        if (Config.YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT.contains("api.facetec.com")) {
+        if (apiEndpoint.contains("api.facetec.com")) {
             requestBuilder.header("X-Testing-API-Header", FaceTecSDK.getTestingAPIHeader());
+        }
+
+        // Add custom headers from FaceTec.initialize() config
+        for (Map.Entry<String, String> entry : customHeaders.entrySet()) {
+            requestBuilder.header(entry.getKey(), entry.getValue());
         }
 
         Request request = requestBuilder

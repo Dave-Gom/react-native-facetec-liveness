@@ -34,6 +34,9 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
 
     let referencingProcessor: SessionRequestProcessor
     let sessionRequestCallback: FaceTecSessionRequestProcessorCallback
+    let deviceKeyIdentifier: String
+    let apiEndpoint: String
+    let customHeaders: [String: String]
     var errorCount: Int = 0
 
     // Cancellation flag - only accessed from main thread (URLSession delegate queue is main)
@@ -41,9 +44,12 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
 
     static let MAX_ERROR_RETRIES = 2
 
-    init(referencingProcessor: SessionRequestProcessor, sessionRequestCallback: FaceTecSessionRequestProcessorCallback) {
+    init(referencingProcessor: SessionRequestProcessor, sessionRequestCallback: FaceTecSessionRequestProcessorCallback, deviceKeyIdentifier: String, apiEndpoint: String, customHeaders: [String: String] = [:]) {
         self.referencingProcessor = referencingProcessor
         self.sessionRequestCallback = sessionRequestCallback
+        self.deviceKeyIdentifier = deviceKeyIdentifier
+        self.apiEndpoint = apiEndpoint
+        self.customHeaders = customHeaders
         super.init()
     }
 
@@ -84,7 +90,7 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
         // - In Your Webservice, build an endpoint that takes incoming requests, and forwards them to FaceTec Server.
         // - This code should never call your server directly. It should contact middleware you have created that forwards requests to your server.
         //
-        guard let url = URL(string: Config.YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT), !Config.YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT.isEmpty else {
+        guard let url = URL(string: apiEndpoint), !apiEndpoint.isEmpty else {
             referencingProcessor.onCatastrophicNetworkError(sessionRequestCallback: sessionRequestCallback)
             return
         }
@@ -94,13 +100,18 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
 
         // Developer Note: This is ONLY needed for calls to the FaceTec Testing API.
         // You should remove this when using Your App connected to Your Webservice + FaceTec Server
-        request.addValue(Config.DeviceKeyIdentifier, forHTTPHeaderField: "X-Device-Key")
+        request.addValue(deviceKeyIdentifier, forHTTPHeaderField: "X-Device-Key")
 
         #if DEBUG
         // Developer Note: This is ONLY needed for calls to the FaceTec Testing API.
         // You should remove this when using Your App connected to Your Webservice + FaceTec Server
         request.addValue(FaceTec.sdk.getTestingAPIHeader(), forHTTPHeaderField: "X-Testing-API-Header")
         #endif
+
+        // Add custom headers from FaceTec.initialize() config
+        for (key, value) in customHeaders {
+            request.addValue(value, forHTTPHeaderField: key)
+        }
 
         request.httpBody = try! JSONSerialization.data(withJSONObject: sessionRequestCallPayload, options: JSONSerialization.WritingOptions(rawValue: 0))
         

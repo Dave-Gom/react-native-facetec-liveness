@@ -3,6 +3,9 @@ package com.facetec;
 import androidx.annotation.NonNull;
 import com.facetec.sdk.FaceTecSessionRequestProcessor;
 
+import java.util.Collections;
+import java.util.Map;
+
 
 // This class demonstrates the most important integration point in the FaceTec Device SDK  -- The Session Request Processor.
 //
@@ -21,11 +24,26 @@ import com.facetec.sdk.FaceTecSessionRequestProcessor;
 // - Adding code that modifies any App UI (Yours or FaceTec's) is not allowed.  Only add code that modifies your own App UI once the FaceTec UI is closed.
 final public class SessionRequestProcessor implements FaceTecSessionRequestProcessor {
 
+    // FaceTec configuration (passed from button props)
+    private final String deviceKeyIdentifier;
+    private final String apiEndpoint;
+    private final Map<String, String> customHeaders;
+
     // Instance-based server response storage (no cross-session contamination)
     private volatile FaceTecServerResponse serverResponse = null;
 
     // Reference to the active networking request (for cancellation)
     private volatile SampleAppNetworkingRequest activeNetworkingRequest = null;
+
+    public SessionRequestProcessor(String deviceKeyIdentifier, String apiEndpoint) {
+        this(deviceKeyIdentifier, apiEndpoint, Collections.emptyMap());
+    }
+
+    public SessionRequestProcessor(String deviceKeyIdentifier, String apiEndpoint, Map<String, String> customHeaders) {
+        this.deviceKeyIdentifier = deviceKeyIdentifier;
+        this.apiEndpoint = apiEndpoint;
+        this.customHeaders = customHeaders != null ? customHeaders : Collections.emptyMap();
+    }
 
     public FaceTecServerResponse getServerResponse() {
         return serverResponse;
@@ -54,7 +72,7 @@ final public class SessionRequestProcessor implements FaceTecSessionRequestProce
     public void onSessionRequest(@NonNull String sessionRequestBlob, @NonNull Callback sessionRequestCallback) {
         // When you receive a Session Request Blob, call your webservice API that handles this object and passes it to FaceTec Server.
         // SampleAppNetworkingRequest is a demonstration class for making a networking call that passes the Session Request Blob, and handles the response.
-        activeNetworkingRequest = SampleAppNetworkingRequest.send(this, sessionRequestBlob, sessionRequestCallback);
+        activeNetworkingRequest = SampleAppNetworkingRequest.send(this, sessionRequestBlob, sessionRequestCallback, deviceKeyIdentifier, apiEndpoint, customHeaders);
     }
 
     // When the Response Blob is received, call processResponse with it.
