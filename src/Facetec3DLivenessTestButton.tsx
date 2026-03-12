@@ -244,7 +244,14 @@ const NativeFaceTecButton = requireNativeComponent<NativeFaceTecButtonProps>(
  *
  * @example
  * ```tsx
- * import { Facetec3DLivenessTestButton } from 'react-native-facetec';
+ * import { FaceTec, Facetec3DLivenessTestButton } from 'react-native-facetec';
+ *
+ * // Call once at app startup (e.g. in App.tsx)
+ * await FaceTec.initialize({
+ *   deviceKeyIdentifier: 'your-device-key',
+ *   apiEndpoint: 'https://your-api.com/facetec',
+ *   headers: { 'Authorization': 'Bearer token' },
+ * });
  *
  * const MyComponent = () => {
  *   return (
