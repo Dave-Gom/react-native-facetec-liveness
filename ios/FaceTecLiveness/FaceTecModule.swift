@@ -52,7 +52,7 @@ class FaceTecConfigStore {
     }
 }
 
-@objc(FaceTecModule)
+@objc(FaceTecLivenessModule)
 class FaceTecModule: NSObject {
 
     /// Shared config store — the button reads from here

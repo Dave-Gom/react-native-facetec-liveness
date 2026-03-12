@@ -19,11 +19,13 @@ Pod::Spec.new do |s|
   # React Native dependency
   s.dependency "React-Core"
 
-  # FaceTec SDK
-  s.vendored_frameworks = "ios/FaceTecSDK.xcframework"
-
-  # Build settings
+  # FaceTec SDK – the xcframework lives in the project root's ios/ directory.
+  # CocoaPods does not support vendored_frameworks with paths outside the pod
+  # tree, so we configure framework search paths manually per SDK.
   s.pod_target_xcconfig = {
-    "DEFINES_MODULE" => "YES"
+    "DEFINES_MODULE" => "YES",
+    "FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]"        => "$(inherited) \"${PODS_ROOT}/../../ios/FaceTecSDKForDevelopment.xcframework/ios-arm64\"",
+    "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]"  => "$(inherited) \"${PODS_ROOT}/../../ios/FaceTecSDKForDevelopment.xcframework/ios-arm64_x86_64-simulator\"",
+    "OTHER_LDFLAGS"                                 => "$(inherited) -framework \"FaceTecSDK\""
   }
 end
