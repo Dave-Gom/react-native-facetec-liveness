@@ -42,6 +42,47 @@ yarn install
 
 ---
 
+## FaceTec SDK Binaries
+
+The FaceTec SDK binary files are **not included in the repository** (listed in `.gitignore`). You must download them from your [FaceTec account](https://dev.facetec.com/account) and place them manually.
+
+### Where to get the SDK
+
+Download the FaceTec SDK from https://dev.facetec.com/downloads. You will get:
+- **Android**: `facetec-sdk-X.X.XX.aar` (inside the Android SDK zip)
+- **iOS**: `FaceTecSDK.xcframework` (inside the iOS SDK zip)
+
+### Where to place the files
+
+```text
+native_modules/react-native-facetec/
+├── android/
+│   └── libs/
+│       └── facetec-sdk-X.X.XX.aar    ← Place the .aar here
+├── ios/
+│   └── FaceTecSDK.xcframework/       ← Place the .xcframework here
+│       ├── Info.plist
+│       ├── ios-arm64/
+│       └── ios-arm64_x86_64-simulator/
+└── ...
+```
+
+> **Note:** If the `android/libs/` directory doesn't exist, create it.
+
+### Updating the SDK version
+
+When updating the FaceTec SDK version:
+
+1. Replace the `.aar` file in `android/libs/` with the new version
+2. Update the AAR filename in `android/build.gradle`:
+   ```gradle
+   implementation(name: 'facetec-sdk-X.X.XX', ext: 'aar')
+   ```
+3. Replace the `ios/FaceTecSDK.xcframework/` directory with the new version
+4. Run `cd ios && pod install` to update the iOS framework reference
+
+---
+
 ## iOS Setup
 
 ### 1. Add pod to Podfile
@@ -116,11 +157,79 @@ These are already included in the module, but ensure your app has:
 
 ---
 
+## Configuration
+
+FaceTec SDK requires a **Device Key Identifier** and an **API endpoint**. There are two ways to configure them:
+
+### Option 1: Via environment variables (recommended)
+
+Centralize configuration using `react-native-config` so values change per environment automatically.
+
+**1. Add to your `.env` files:**
+
+```bash
+FACETEC_DEVICE_KEY=your-device-key-identifier
+FACETEC_API_ENDPOINT=https://api.facetec.com/api/v4/biometrics/process-request
+```
+
+**2. Add TypeScript types in `env.d.ts`:**
+
+```typescript
+declare module 'react-native-config' {
+  export interface Env {
+    // ... other vars
+    FACETEC_DEVICE_KEY: string;
+    FACETEC_API_ENDPOINT: string;
+  }
+}
+```
+
+**3. Pass as props to the component:**
+
+```tsx
+import Env from 'react-native-config';
+
+<Facetec3DLivenessTestButton
+  deviceKeyIdentifier={Env.FACETEC_DEVICE_KEY}
+  apiEndpoint={Env.FACETEC_API_ENDPOINT}
+  onResponse={handleResponse}
+  onError={handleError}
+/>
+```
+
+### Option 2: Via native Config files (fallback)
+
+If no props are provided, the SDK reads from the native Config files:
+
+- **iOS**: `ios/FaceTecLiveness/Config.swift`
+- **Android**: `android/src/main/java/com/facetec/Config.java`
+
+```text
+DeviceKeyIdentifier = "your-device-key"
+YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT = "your-endpoint-url"
+```
+
+### API Endpoint Configuration
+
+| Environment | Endpoint | Notes |
+|-------------|----------|-------|
+| **Testing/Dev** | `https://api.facetec.com/api/v4/biometrics/process-request` | FaceTec's public testing server |
+| **Production** | `https://your-server.com/facetec/process` | YOUR OWN backend server |
+
+**IMPORTANT**: In production, you MUST use your own backend server that proxies requests to FaceTec. Calling FaceTec's API directly from the app is NOT allowed in production.
+
+See:
+- [Security Best Practices](https://dev.facetec.com/security-best-practices#server-rest-endpoint-security)
+- [Architecture Diagram](https://dev.facetec.com/configuration-options#zoom-architecture-and-data-flow)
+
+---
+
 ## Usage
 
 ```tsx
 import React from 'react';
 import { View, Alert } from 'react-native';
+import Env from 'react-native-config';
 import { Facetec3DLivenessTestButton } from 'react-native-facetec';
 
 const MyComponent = () => {
@@ -147,6 +256,9 @@ const MyComponent = () => {
       case 'init_error':
         Alert.alert('Error', 'No se pudo inicializar el SDK');
         break;
+      case 'device_not_supported':
+        Alert.alert('Error', 'Dispositivo no soportado');
+        break;
       case 'network_error':
         Alert.alert('Error de red', error.message);
         break;
@@ -156,6 +268,8 @@ const MyComponent = () => {
   return (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
       <Facetec3DLivenessTestButton
+        deviceKeyIdentifier={Env.FACETEC_DEVICE_KEY}
+        apiEndpoint={Env.FACETEC_API_ENDPOINT}
         onResponse={handleResponse}
         onError={handleError}
         style={{ width: 250, height: 50, backgroundColor: 'blue' }}
@@ -181,6 +295,8 @@ export default MyComponent;
 |------|------|----------|---------|-------------|
 | `onResponse` | `(response: LivenessResponse) => void` | Yes | - | Callback when liveness check completes with server response |
 | `onError` | `(error: ErrorEvent) => void` | No | - | Callback for errors without server response (permission denied, cancelled, etc.) |
+| `deviceKeyIdentifier` | `string` | No | Config file value | FaceTec Device Key Identifier (from `react-native-config` / `.env`) |
+| `apiEndpoint` | `string` | No | Config file value | FaceTec API endpoint URL (from `react-native-config` / `.env`) |
 | `style` | `ViewStyle` | No | - | Custom styles for the button (including backgroundColor for ready state) |
 | `initializingText` | `string` | No | `"Initializing"` | Text shown while SDK initializes |
 | `readyText` | `string` | No | `"Start liveness check"` | Text shown when ready |
@@ -204,11 +320,12 @@ interface ErrorEvent {
 }
 
 type ErrorType =
-  | 'permission_denied'   // Camera permission was denied
-  | 'init_error'          // SDK initialization failed
-  | 'session_cancelled'   // User cancelled the session
-  | 'network_error'       // Network error or timeout
-  | 'internal_error';     // Internal error (e.g., no parent view controller)
+  | 'permission_denied'      // Camera permission was denied
+  | 'init_error'             // SDK initialization failed
+  | 'device_not_supported'   // Device doesn't support FaceTec
+  | 'session_cancelled'      // User cancelled the session
+  | 'network_error'          // Network error or timeout
+  | 'internal_error';        // Internal error (e.g., no parent view controller)
 ```
 
 ### Error Handling
@@ -224,6 +341,9 @@ const handleError = (error: ErrorEvent) => {
       break;
     case 'init_error':
       // SDK failed to initialize - check configuration
+      break;
+    case 'device_not_supported':
+      // Device is not compatible with FaceTec
       break;
     case 'network_error':
       // Network issue - prompt retry
@@ -337,35 +457,6 @@ const handleResponse = (response: LivenessResponse) => {
 
 ---
 
-## Configuration
-
-To configure the FaceTec SDK, modify these files:
-
-- **iOS**: `ios/FaceTecLiveness/Config.swift`
-- **Android**: `android/src/main/java/com/facetec/Config.java`
-
-### Required Configuration
-
-```text
-DeviceKeyIdentifier = "your-device-key"
-YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT = "your-endpoint-url"
-```
-
-### API Endpoint Configuration
-
-| Environment | Endpoint | Notes |
-|-------------|----------|-------|
-| **Testing/Dev** | `https://api.facetec.com/api/v4/biometrics/process-request` | FaceTec's public testing server |
-| **Production** | `https://your-server.com/facetec/process` | YOUR OWN backend server |
-
-**IMPORTANT**: In production, you MUST use your own backend server that proxies requests to FaceTec. Calling FaceTec's API directly from the app is NOT allowed in production.
-
-See:
-- [Security Best Practices](https://dev.facetec.com/security-best-practices#server-rest-endpoint-security)
-- [Architecture Diagram](https://dev.facetec.com/configuration-options#zoom-architecture-and-data-flow)
-
----
-
 ## Troubleshooting
 
 ### Error: "FaceTecLivenessButton was not found in UIManager"
@@ -380,7 +471,13 @@ This happens when the module is registered twice. React Native autolinking handl
 
 ### Error: "Could not find :facetec-sdk-X.X.X"
 
-Make sure you added the `flatDir` repository configuration in `android/app/build.gradle` (see step 3 of Android Setup).
+Make sure you:
+1. Placed the `.aar` file in `android/libs/`
+2. Added the `flatDir` repository configuration in `android/app/build.gradle` (see step 3 of Android Setup)
+
+### Error: `init_error` with message `REQUEST_ABORTED`
+
+The `DeviceKeyIdentifier` is empty or invalid. Make sure you configured it either via the `deviceKeyIdentifier` prop (from `.env`) or in the native Config files.
 
 ### Error: "Using bridging headers with framework targets is unsupported"
 
@@ -400,7 +497,7 @@ react-native-facetec/
 │   ├── index.ts
 │   └── Facetec3DLivenessTestButton.tsx
 ├── ios/
-│   ├── FaceTecSDK.xcframework/
+│   ├── FaceTecSDK.xcframework/          ← Not in git, add manually
 │   └── FaceTecLiveness/
 │       ├── FaceTecLivenessViewManager.swift
 │       ├── FaceTecLivenessViewManager.m
@@ -409,7 +506,7 @@ react-native-facetec/
 │       └── SampleAppNetworkingRequest.swift
 ├── android/
 │   ├── libs/
-│   │   └── facetec-sdk-10.0.38.aar
+│   │   └── facetec-sdk-X.X.XX.aar      ← Not in git, add manually
 │   └── src/main/java/com/facetec/
 │       ├── FaceTecLivenessViewManager.java
 │       ├── FaceTecLivenessPackage.java
