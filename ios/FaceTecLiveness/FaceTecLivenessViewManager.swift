@@ -18,7 +18,7 @@ class FaceTecLivenessButtonManager: RCTViewManager {
 
 // MARK: - RNFaceTecLivenessButton (Wrapper para React Native)
 
-class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
+class RNFaceTecLivenessButton: UIButton {
 
     // MARK: - React Native Event Callbacks
 
@@ -76,12 +76,13 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
         }
     }
 
-    private var facetecSDKInstance: FaceTecSDKInstance?
     private weak var faceTecViewController: UIViewController?
     private var hasPermissionError = false
     private var isSessionActive = false
     private var activeProcessor: SessionRequestProcessor?
     private var livenessContainerView: UIView?
+    private var sdkPollTimer: Timer?
+    private static let sdkPollInterval: TimeInterval = 0.5
 
     // MARK: - Init
 
@@ -105,8 +106,15 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
         titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
 
         addTarget(self, action: #selector(buttonPressed), for: .touchUpInside)
+    }
 
-        checkCameraPermissionAndInitialize()
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil {
+            verifyInitializationAndCheckPermission()
+        } else {
+            stopPollingForInitialization()
+        }
     }
 
     // MARK: - State Change Emission
@@ -116,18 +124,61 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
         onStateChange(["state": currentState.rawValue])
     }
 
+    // MARK: - Initialization Verification + Camera Permission
+
+    private func verifyInitializationAndCheckPermission() {
+        // Already ready or has a permission error — nothing to do
+        if currentState == .ready { return }
+        if currentState == .error && hasPermissionError { return }
+
+        let store = FaceTecModule.shared
+
+        if store.isInitialized && store.sdkInstance != nil {
+            stopPollingForInitialization()
+            checkCameraPermission()
+            return
+        }
+
+        // Stay in initializing state — the TSX component applies initializingStyle
+        DispatchQueue.main.async {
+            self.setTitle(self.initializingText, for: .normal)
+            self.isEnabled = false
+            self.currentState = .initializing
+        }
+
+        startPollingForInitialization()
+    }
+
+    private func startPollingForInitialization() {
+        guard sdkPollTimer == nil else { return }
+
+        sdkPollTimer = Timer.scheduledTimer(withTimeInterval: Self.sdkPollInterval, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            let store = FaceTecModule.shared
+            if store.isInitialized && store.sdkInstance != nil {
+                self.stopPollingForInitialization()
+                self.checkCameraPermission()
+            }
+        }
+    }
+
+    private func stopPollingForInitialization() {
+        sdkPollTimer?.invalidate()
+        sdkPollTimer = nil
+    }
+
     // MARK: - Camera Permission
 
-    private func checkCameraPermissionAndInitialize() {
+    private func checkCameraPermission() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
-            initializeFaceTec()
+            handleSDKReady()
 
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 DispatchQueue.main.async {
                     if granted {
-                        self?.initializeFaceTec()
+                        self?.handleSDKReady()
                     } else {
                         self?.handleCameraPermissionDenied()
                     }
@@ -139,6 +190,16 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
 
         @unknown default:
             handleCameraPermissionDenied()
+        }
+    }
+
+    private func handleSDKReady() {
+        self.hasPermissionError = false
+
+        DispatchQueue.main.async {
+            self.setTitle(self.readyText, for: .normal)
+            self.isEnabled = true
+            self.currentState = .ready
         }
     }
 
@@ -154,47 +215,13 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
         emitError(errorType: .permissionDenied, message: permissionDeniedText)
     }
 
-    // MARK: - FaceTec Initialization
-
-    private func initializeFaceTec() {
-        FaceTec.sdk.initializeWithSessionRequest(
-            deviceKeyIdentifier: Config.DeviceKeyIdentifier,
-            sessionRequestProcessor: SessionRequestProcessor(),
-            completion: self
-        )
-    }
-
-    func onFaceTecSDKInitializeSuccess(sdkInstance: FaceTecSDKInstance) {
-        self.facetecSDKInstance = sdkInstance
-        self.hasPermissionError = false
-
-        DispatchQueue.main.async {
-            self.setTitle(self.readyText, for: .normal)
-            self.isEnabled = true
-            self.currentState = .ready
-        }
-    }
-
-    func onFaceTecSDKInitializeError(error: FaceTecInitializationError) {
-        DispatchQueue.main.async {
-            self.setTitle(self.errorText, for: .normal)
-            self.isEnabled = false
-            self.currentState = .error
-        }
-
-        let errorString = String(describing: error)
-        let errorType: ErrorType = errorString.lowercased().contains("devicenotsupported")
-            ? .deviceNotSupported
-            : .initError
-
-        emitError(errorType: errorType, message: errorString)
-    }
-
     // MARK: - Button Action
 
     @objc private func buttonPressed() {
+        let store = FaceTecModule.shared
+
         // Prevent double-tap - check if session is already active
-        guard currentState == .ready, !isSessionActive, let sdkInstance = facetecSDKInstance else {
+        guard currentState == .ready, !isSessionActive, let sdkInstance = store.sdkInstance else {
             return
         }
 
@@ -208,6 +235,8 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
     }
 
     private func startLiveness(sdkInstance: FaceTecSDKInstance, parentVC: UIViewController) {
+        let store = FaceTecModule.shared
+
         // Crear contenedor
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
@@ -226,8 +255,12 @@ class RNFaceTecLivenessButton: UIButton, FaceTecInitializeCallback {
         // Cancel any previous session's in-flight requests
         activeProcessor?.cancel()
 
-        // Crear processor con callback
-        let processor = SessionRequestProcessor()
+        // Crear processor con config del singleton (incluye headers custom)
+        let processor = SessionRequestProcessor(
+            deviceKeyIdentifier: store.deviceKeyIdentifier,
+            apiEndpoint: store.apiEndpoint,
+            customHeaders: store.headers
+        )
         activeProcessor = processor
         processor.onComplete = { [weak self, weak parentVC, weak container] result, serverResponse in
             DispatchQueue.main.async {

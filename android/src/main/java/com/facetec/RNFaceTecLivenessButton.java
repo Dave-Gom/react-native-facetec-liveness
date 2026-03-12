@@ -14,14 +14,12 @@ import android.view.Gravity;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.widget.AppCompatButton;
-import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.modules.core.PermissionAwareActivity;
 import com.facebook.react.modules.core.PermissionListener;
 
-import com.facetec.sdk.FaceTecInitializationError;
 import com.facetec.sdk.FaceTecSDK;
 import com.facetec.sdk.FaceTecSDKInstance;
 import com.facetec.sdk.FaceTecSessionResult;
@@ -32,12 +30,13 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
 
     private boolean permissionRequested = false;
 
-    // SDK Instance
-    private FaceTecSDKInstance sdkInstance;
-
     // Active session processor (for response retrieval)
     // Only accessed from the main/UI thread
     private SessionRequestProcessor activeProcessor = null;
+
+    // SDK initialization polling
+    private static final long SDK_POLL_INTERVAL_MS = 500;
+    private Runnable sdkPollRunnable;
 
     // State
     private enum ButtonState {
@@ -123,7 +122,13 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        checkCameraPermissionAndInitialize();
+        verifyInitializationAndCheckPermission();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        stopPollingForInitialization();
     }
 
     public void setResultListener(LivenessResultListener listener) {
@@ -235,15 +240,71 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
         return dp * density;
     }
 
-    private void checkCameraPermissionAndInitialize() {
+    // MARK: - Initialization Verification + Camera Permission
+
+    private void verifyInitializationAndCheckPermission() {
+        // Already ready or has a permission error — nothing to do
+        if (currentState == ButtonState.READY) return;
+        if (currentState == ButtonState.ERROR && hasPermissionError) return;
+
+        if (FaceTecLivenessModule.isSDKInitialized() && FaceTecLivenessModule.getSdkInstance() != null) {
+            stopPollingForInitialization();
+            checkCameraPermission();
+            return;
+        }
+
+        // Stay in initializing state — the TSX component applies initializingStyle
+        post(() -> {
+            setText(initializingText);
+            setEnabled(false);
+            setState(ButtonState.INITIALIZING);
+        });
+
+        startPollingForInitialization();
+    }
+
+    private void startPollingForInitialization() {
+        if (sdkPollRunnable != null) return; // Already polling
+
+        sdkPollRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (FaceTecLivenessModule.isSDKInitialized() && FaceTecLivenessModule.getSdkInstance() != null) {
+                    sdkPollRunnable = null;
+                    checkCameraPermission();
+                } else {
+                    postDelayed(this, SDK_POLL_INTERVAL_MS);
+                }
+            }
+        };
+        postDelayed(sdkPollRunnable, SDK_POLL_INTERVAL_MS);
+    }
+
+    private void stopPollingForInitialization() {
+        if (sdkPollRunnable != null) {
+            removeCallbacks(sdkPollRunnable);
+            sdkPollRunnable = null;
+        }
+    }
+
+    private void checkCameraPermission() {
         Context context = getContext();
 
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED) {
-            initializeFaceTecSDK();
+            handleSDKReady();
         } else {
             requestCameraPermission();
         }
+    }
+
+    private void handleSDKReady() {
+        hasPermissionError = false;
+        post(() -> {
+            setText(readyText);
+            setEnabled(true);
+            setState(ButtonState.READY);
+        });
     }
 
     private void requestCameraPermission() {
@@ -270,7 +331,7 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
             );
         } else if (activity != null) {
             permissionRequested = true;
-            ActivityCompat.requestPermissions(
+            androidx.core.app.ActivityCompat.requestPermissions(
                     activity,
                     new String[]{Manifest.permission.CAMERA},
                     CAMERA_PERMISSION_REQUEST_CODE
@@ -296,7 +357,7 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     public boolean onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                initializeFaceTecSDK();
+                handleSDKReady();
             } else {
                 handlePermissionDenied();
             }
@@ -319,61 +380,14 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
 
     public void onPermissionResult(boolean granted) {
         if (granted) {
-            initializeFaceTecSDK();
+            handleSDKReady();
         } else {
             handlePermissionDenied();
         }
     }
 
-    private void initializeFaceTecSDK() {
-        Context context = getContext();
-
-        try {
-            FaceTecSDK.initializeWithSessionRequest(
-                    context,
-                    Config.DeviceKeyIdentifier,
-                    new SessionRequestProcessor(),
-                    new FaceTecSDK.InitializeCallback() {
-                        @Override
-                        public void onSuccess(@NonNull FaceTecSDKInstance _sdkInstance) {
-                            sdkInstance = _sdkInstance;
-                            hasPermissionError = false;
-                            post(() -> {
-                                setText(readyText);
-                                setEnabled(true);
-                                setState(ButtonState.READY);
-                            });
-                        }
-
-                        @Override
-                        public void onError(@NonNull FaceTecInitializationError error) {
-                            post(() -> {
-                                setText(errorText);
-                                setEnabled(false);
-                                setState(ButtonState.ERROR);
-                            });
-                            if (resultListener != null) {
-                                ErrorType errorType = error.name().toLowerCase().contains("device_not_supported")
-                                    ? ErrorType.DEVICE_NOT_SUPPORTED
-                                    : ErrorType.INIT_ERROR;
-                                resultListener.onInitializationError(error.name(), errorType);
-                            }
-                        }
-                    }
-            );
-        } catch (Exception e) {
-            post(() -> {
-                setText(errorText);
-                setEnabled(false);
-                setState(ButtonState.ERROR);
-            });
-            if (resultListener != null) {
-                resultListener.onInitializationError(e.getMessage(), ErrorType.INIT_ERROR);
-            }
-        }
-    }
-
     private void startLiveness() {
+        FaceTecSDKInstance sdkInstance = FaceTecLivenessModule.getSdkInstance();
         if (sdkInstance == null || currentState != ButtonState.READY) {
             return;
         }
@@ -396,7 +410,12 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
         // Register this button with the module to receive activity results
         FaceTecLivenessModule.setCurrentButton(this);
 
-        activeProcessor = new SessionRequestProcessor();
+        // Create processor with config from the module singleton (includes custom headers)
+        activeProcessor = new SessionRequestProcessor(
+                FaceTecLivenessModule.getDeviceKeyIdentifier(),
+                FaceTecLivenessModule.getApiEndpoint(),
+                FaceTecLivenessModule.getHeaders()
+        );
         sdkInstance.start3DLiveness(activity, activeProcessor);
     }
 
