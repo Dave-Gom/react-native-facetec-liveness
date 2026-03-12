@@ -50,35 +50,41 @@ The FaceTec SDK binary files are **not included in the repository** (listed in `
 
 Download the FaceTec SDK from https://dev.facetec.com/downloads. You will get:
 - **Android**: `facetec-sdk-X.X.XX.aar` (inside the Android SDK zip)
-- **iOS**: `FaceTecSDK.xcframework` (inside the iOS SDK zip)
+- **iOS**: `FaceTecSDK.xcframework` or `FaceTecSDKForDevelopment.xcframework` (inside the iOS SDK zip)
 
 ### Where to place the files
 
+The **Android AAR** goes inside the module, while the **iOS xcframework** goes in your **host project's** `ios/` directory (not the module):
+
 ```text
-native_modules/react-native-facetec/
-├── android/
-│   └── libs/
-│       └── facetec-sdk-X.X.XX.aar    ← Place the .aar here
+your-react-native-project/
 ├── ios/
-│   └── FaceTecSDK.xcframework/       ← Place the .xcframework here
+│   └── FaceTecSDKForDevelopment.xcframework/   ← iOS: place here (host project)
 │       ├── Info.plist
 │       ├── ios-arm64/
 │       └── ios-arm64_x86_64-simulator/
+├── native_modules/
+│   └── react-native-facetec/
+│       └── android/
+│           └── libs/
+│               └── facetec-sdk-X.X.XX.aar      ← Android: place here (module)
 └── ...
 ```
 
 > **Note:** If the `android/libs/` directory doesn't exist, create it.
 
+> **Note:** For production, replace `FaceTecSDKForDevelopment.xcframework` with `FaceTecSDK.xcframework` and update the framework search paths in the podspec accordingly.
+
 ### Updating the SDK version
 
 When updating the FaceTec SDK version:
 
-1. Replace the `.aar` file in `android/libs/` with the new version
+1. Replace the `.aar` file in `native_modules/react-native-facetec/android/libs/` with the new version
 2. Update the AAR filename in `android/build.gradle`:
    ```gradle
    implementation(name: 'facetec-sdk-X.X.XX', ext: 'aar')
    ```
-3. Replace the `ios/FaceTecSDK.xcframework/` directory with the new version
+3. Replace the xcframework directory in your host project's `ios/` with the new version
 4. Run `cd ios && pod install` to update the iOS framework reference
 
 ---
@@ -101,6 +107,8 @@ end
 ```bash
 cd ios && pod install && cd ..
 ```
+
+The podspec configures `FRAMEWORK_SEARCH_PATHS` automatically to find the xcframework in your host project's `ios/` directory. If you use a different xcframework name or location, update the paths in `react-native-facetec.podspec`.
 
 ### 3. Add camera permission to Info.plist
 
@@ -157,13 +165,24 @@ These are already included in the module, but ensure your app has:
 
 ---
 
-## Configuration
+## Configuration & Initialization
 
-FaceTec SDK requires a **Device Key Identifier** and an **API endpoint**. There are two ways to configure them:
+FaceTec SDK requires a **Device Key Identifier** and an **API endpoint**. Initialize the SDK from JavaScript using `FaceTec.initialize()` before the button can be used.
 
-### Option 1: Via environment variables (recommended)
+### Basic initialization
 
-Centralize configuration using `react-native-config` so values change per environment automatically.
+```typescript
+import { FaceTec } from 'react-native-facetec';
+
+await FaceTec.initialize({
+  deviceKeyIdentifier: 'your-device-key-identifier',
+  apiEndpoint: 'https://api.facetec.com/api/v4/biometrics/process-request',
+});
+```
+
+### With environment variables (recommended)
+
+Use `react-native-config` to manage configuration per environment:
 
 **1. Add to your `.env` files:**
 
@@ -172,42 +191,39 @@ FACETEC_DEVICE_KEY=your-device-key-identifier
 FACETEC_API_ENDPOINT=https://api.facetec.com/api/v4/biometrics/process-request
 ```
 
-**2. Add TypeScript types in `env.d.ts`:**
+**2. Initialize in your app entry point (e.g., `App.tsx`):**
 
 ```typescript
-declare module 'react-native-config' {
-  export interface Env {
-    // ... other vars
-    FACETEC_DEVICE_KEY: string;
-    FACETEC_API_ENDPOINT: string;
-  }
-}
-```
-
-**3. Pass as props to the component:**
-
-```tsx
+import { FaceTec } from 'react-native-facetec';
 import Env from 'react-native-config';
 
-<Facetec3DLivenessTestButton
-  deviceKeyIdentifier={Env.FACETEC_DEVICE_KEY}
-  apiEndpoint={Env.FACETEC_API_ENDPOINT}
-  onResponse={handleResponse}
-  onError={handleError}
-/>
+await FaceTec.initialize({
+  deviceKeyIdentifier: Env.FACETEC_DEVICE_KEY,
+  apiEndpoint: Env.FACETEC_API_ENDPOINT,
+  headers: { 'Authorization': 'Bearer token' }, // optional custom headers
+});
 ```
 
-### Option 2: Via native Config files (fallback)
+### FaceTecInitConfig
 
-If no props are provided, the SDK reads from the native Config files:
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `deviceKeyIdentifier` | `string` | Yes | FaceTec Device Key Identifier |
+| `apiEndpoint` | `string` | No | API endpoint URL. Falls back to native Config file value |
+| `headers` | `Record<string, string>` | No | Custom headers to include in FaceTec API requests |
+
+### Initialization behavior
+
+- **Idempotent**: Calling `initialize()` when already initialized resolves to `true` immediately.
+- **Concurrent-safe**: Calling `initialize()` while initialization is in progress rejects with an error.
+- **Thread-safe**: Both iOS and Android use synchronized access to SDK state.
+
+### API endpoint fallback
+
+If `apiEndpoint` is not provided, the SDK falls back to the native Config files:
 
 - **iOS**: `ios/FaceTecLiveness/Config.swift`
 - **Android**: `android/src/main/java/com/facetec/Config.java`
-
-```text
-DeviceKeyIdentifier = "your-device-key"
-YOUR_API_OR_FACETEC_TESTING_API_ENDPOINT = "your-endpoint-url"
-```
 
 ### API Endpoint Configuration
 
@@ -227,40 +243,46 @@ See:
 ## Usage
 
 ```tsx
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Alert } from 'react-native';
 import Env from 'react-native-config';
-import { Facetec3DLivenessTestButton } from 'react-native-facetec';
+import { FaceTec, Facetec3DLivenessTestButton } from 'react-native-facetec';
 
 const MyComponent = () => {
+  useEffect(() => {
+    FaceTec.initialize({
+      deviceKeyIdentifier: Env.FACETEC_DEVICE_KEY,
+      apiEndpoint: Env.FACETEC_API_ENDPOINT,
+    }).catch((err) => console.error('FaceTec init failed:', err));
+  }, []);
+
   const handleResponse = (response) => {
     if (response.success && !response.didError && response.result?.livenessProven) {
-      Alert.alert('Éxito', 'Verificación de vida completada');
+      Alert.alert('Success', 'Liveness verified');
       console.log('Server info:', response.serverInfo);
     } else if (response.didError) {
-      Alert.alert('Error', 'Error en el servidor');
+      Alert.alert('Error', 'Server error');
     } else {
-      Alert.alert('Fallido', 'Liveness no verificado');
+      Alert.alert('Failed', 'Liveness not verified');
     }
   };
 
   const handleError = (error) => {
     switch (error.errorType) {
       case 'permission_denied':
-        Alert.alert('Permiso denegado', 'Se requiere acceso a la cámara');
+        Alert.alert('Permission denied', 'Camera access is required');
         break;
       case 'session_cancelled':
-        // Usuario canceló, no mostrar alerta
-        console.log('Usuario canceló la sesión');
+        console.log('User cancelled the session');
         break;
       case 'init_error':
-        Alert.alert('Error', 'No se pudo inicializar el SDK');
+        Alert.alert('Error', 'SDK initialization failed');
         break;
       case 'device_not_supported':
-        Alert.alert('Error', 'Dispositivo no soportado');
+        Alert.alert('Error', 'Device not supported');
         break;
       case 'network_error':
-        Alert.alert('Error de red', error.message);
+        Alert.alert('Network error', error.message);
         break;
     }
   };
@@ -268,17 +290,15 @@ const MyComponent = () => {
   return (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
       <Facetec3DLivenessTestButton
-        deviceKeyIdentifier={Env.FACETEC_DEVICE_KEY}
-        apiEndpoint={Env.FACETEC_API_ENDPOINT}
         onResponse={handleResponse}
         onError={handleError}
-        style={{ width: 250, height: 50, backgroundColor: 'blue' }}
+        style={{ width: 250, height: 50, backgroundColor: '#007AFF' }}
         initializingText="Initializing"
         readyText="Start liveness check"
         errorText="Initialization error"
         permissionDeniedText="Camera permission denied"
-        errorStyle={{ backgroundColor: 'red' }}
-        initializingStyle={{ backgroundColor: 'gray' }}
+        errorStyle={{ backgroundColor: '#FF3B30' }}
+        initializingStyle={{ backgroundColor: '#808080' }}
       />
     </View>
   );
@@ -287,16 +307,57 @@ const MyComponent = () => {
 export default MyComponent;
 ```
 
+> **Note:** The button stays in "initializing" state until `FaceTec.initialize()` completes. You can mount the button and call `initialize()` in any order.
+
 ---
 
-## Props
+## FaceTec API
+
+The `FaceTec` object provides imperative methods for SDK lifecycle management:
+
+```typescript
+import { FaceTec } from 'react-native-facetec';
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `FaceTec.initialize(config)` | `Promise<boolean>` | Initialize the SDK. Resolves `true` on success |
+| `FaceTec.isInitialized()` | `Promise<boolean>` | Check if the SDK is initialized |
+| `FaceTec.getSDKVersion()` | `Promise<string>` | Get the FaceTec SDK version string |
+
+---
+
+## FaceTecErrorType
+
+The `FaceTecErrorType` enum provides typed error constants for use in error handlers:
+
+```typescript
+import { FaceTecErrorType } from 'react-native-facetec';
+
+// Use in error handling
+if (error.errorType === FaceTecErrorType.PERMISSION_DENIED) {
+  // handle permission denied
+}
+```
+
+| Value | String | Description |
+|-------|--------|-------------|
+| `INIT_ERROR` | `'init_error'` | SDK initialization failed |
+| `PERMISSION_DENIED` | `'permission_denied'` | Camera permission was denied |
+| `DEVICE_NOT_SUPPORTED` | `'device_not_supported'` | Device doesn't support FaceTec |
+| `SESSION_CANCELLED` | `'session_cancelled'` | User cancelled the session |
+| `NETWORK_ERROR` | `'network_error'` | Network error or timeout |
+| `INTERNAL_ERROR` | `'internal_error'` | Internal error (e.g., no parent view controller) |
+
+---
+
+## Button Props
 
 | Prop | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
 | `onResponse` | `(response: LivenessResponse) => void` | Yes | - | Callback when liveness check completes with server response |
 | `onError` | `(error: ErrorEvent) => void` | No | - | Callback for errors without server response (permission denied, cancelled, etc.) |
-| `deviceKeyIdentifier` | `string` | No | Config file value | FaceTec Device Key Identifier (from `react-native-config` / `.env`) |
-| `apiEndpoint` | `string` | No | Config file value | FaceTec API endpoint URL (from `react-native-config` / `.env`) |
+| `onStateChange` | `(state: ButtonState) => void` | No | - | Callback when button state changes (`'initializing'`, `'ready'`, `'error'`) |
 | `style` | `ViewStyle` | No | - | Custom styles for the button (including backgroundColor for ready state) |
 | `initializingText` | `string` | No | `"Initializing"` | Text shown while SDK initializes |
 | `readyText` | `string` | No | `"Start liveness check"` | Text shown when ready |
@@ -331,24 +392,26 @@ type ErrorType =
 ### Error Handling
 
 ```typescript
+import { FaceTecErrorType } from 'react-native-facetec';
+
 const handleError = (error: ErrorEvent) => {
   switch (error.errorType) {
-    case 'permission_denied':
+    case FaceTecErrorType.PERMISSION_DENIED:
       // Prompt user to enable camera permission
       break;
-    case 'session_cancelled':
+    case FaceTecErrorType.SESSION_CANCELLED:
       // User cancelled - usually no action needed
       break;
-    case 'init_error':
+    case FaceTecErrorType.INIT_ERROR:
       // SDK failed to initialize - check configuration
       break;
-    case 'device_not_supported':
+    case FaceTecErrorType.DEVICE_NOT_SUPPORTED:
       // Device is not compatible with FaceTec
       break;
-    case 'network_error':
+    case FaceTecErrorType.NETWORK_ERROR:
       // Network issue - prompt retry
       break;
-    case 'internal_error':
+    case FaceTecErrorType.INTERNAL_ERROR:
       // Unexpected error
       break;
   }
@@ -477,7 +540,7 @@ Make sure you:
 
 ### Error: `init_error` with message `REQUEST_ABORTED`
 
-The `DeviceKeyIdentifier` is empty or invalid. Make sure you configured it either via the `deviceKeyIdentifier` prop (from `.env`) or in the native Config files.
+The `DeviceKeyIdentifier` is empty or invalid. Make sure you passed a valid `deviceKeyIdentifier` to `FaceTec.initialize()`.
 
 ### Error: "Using bridging headers with framework targets is unsupported"
 
@@ -495,10 +558,12 @@ Always use `yarn install` instead of `npm install` to respect the existing `yarn
 react-native-facetec/
 ├── src/
 │   ├── index.ts
+│   ├── FaceTecModule.ts                  ← Imperative JS API (FaceTec.initialize, etc.)
 │   └── Facetec3DLivenessTestButton.tsx
 ├── ios/
-│   ├── FaceTecSDK.xcframework/          ← Not in git, add manually
 │   └── FaceTecLiveness/
+│       ├── FaceTecModule.swift            ← Native module (initialization logic)
+│       ├── FaceTecModule.m                ← Obj-C bridge
 │       ├── FaceTecLivenessViewManager.swift
 │       ├── FaceTecLivenessViewManager.m
 │       ├── Config.swift
@@ -506,11 +571,11 @@ react-native-facetec/
 │       └── SampleAppNetworkingRequest.swift
 ├── android/
 │   ├── libs/
-│   │   └── facetec-sdk-X.X.XX.aar      ← Not in git, add manually
+│   │   └── facetec-sdk-X.X.XX.aar        ← Not in git, add manually
 │   └── src/main/java/com/facetec/
+│       ├── FaceTecLivenessModule.java     ← Native module (initialization logic)
 │       ├── FaceTecLivenessViewManager.java
 │       ├── FaceTecLivenessPackage.java
-│       ├── FaceTecLivenessModule.java
 │       ├── RNFaceTecLivenessButton.java
 │       ├── Config.java
 │       ├── SessionRequestProcessor.java
@@ -519,6 +584,8 @@ react-native-facetec/
 ├── react-native-facetec.podspec
 └── README.md
 ```
+
+> **Note:** The iOS xcframework is placed in the **host project's** `ios/` directory, not inside this module. See [FaceTec SDK Binaries](#facetec-sdk-binaries) for details.
 
 ---
 
