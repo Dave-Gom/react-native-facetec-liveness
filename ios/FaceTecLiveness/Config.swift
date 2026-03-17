@@ -20,7 +20,8 @@ extension UIColor {
         case 6:
             (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
         case 8:
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+            // RRGGBBAA format
+            (a, r, g, b) = (int & 0xFF, int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF)
         default:
             (a, r, g, b) = (255, 0, 0, 0)
         }
@@ -92,7 +93,7 @@ class Config {
         defaultCustomization.frameCustomization.borderColor = borderColor
 
         // Set Overlay Customization
-        defaultCustomization.overlayCustomization.brandingImage = yourAppLogoImage
+        defaultCustomization.overlayCustomization.showBrandingImage = false
         defaultCustomization.overlayCustomization.backgroundColor = outerBackgroundColor
 
         // Set Guidance Customization
@@ -130,6 +131,7 @@ class Config {
         
         // Set Security Watermark Customization
         defaultCustomization.securityWatermarkImage = securityWatermarkImage
+    
 
         // Set ID Scan Customization
         defaultCustomization.idScanCustomization.selectionScreenBackgroundColors = [frameColor, frameColor]

@@ -60,6 +60,8 @@ class RNFaceTecLivenessButton: UIButton {
         }
     }
 
+    @objc var customization: NSDictionary?
+
     // MARK: - State
 
     private enum ButtonState: String {
@@ -236,6 +238,14 @@ class RNFaceTecLivenessButton: UIButton {
 
     private func startLiveness(sdkInstance: FaceTecSDKInstance, parentVC: UIViewController) {
         let store = FaceTecModule.shared
+
+        // Apply customization before starting the session
+        if let dict = customization as? [String: Any], !dict.isEmpty {
+            FaceTecCustomizationBuilder.apply(from: dict)
+            FaceTecCustomizationBuilder.applyDynamicStrings(from: dict)
+        } else {
+            FaceTecCustomizationBuilder.applyDefaults()
+        }
 
         // Crear contenedor
         let container = UIView()

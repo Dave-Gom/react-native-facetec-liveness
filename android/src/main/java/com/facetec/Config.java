@@ -37,15 +37,15 @@ public class Config {
 
         // For Color Customization
         int outerBackgroundColor = Color.parseColor("#ffffff");
-        int frameColor = Color.parseColor("#ffffff");
-        int borderColor = Color.parseColor("#417FB2");
-        int ovalColor = Color.parseColor("#417FB2");
-        int dualSpinnerColor = Color.parseColor("#417FB2");
-        int textColor = Color.parseColor("#417FB2");
-        int buttonAndFeedbackBarColor =  Color.parseColor("#417FB2");
+        int frameColor = Color.parseColor("#fffffe");
+        int borderColor = Color.parseColor("#ffffff");
+        int ovalColor = Color.parseColor("#ffffff");
+        int dualSpinnerColor = Color.parseColor("#0b6fc7");
+        int textColor = Color.parseColor("#feffff");
+        int buttonAndFeedbackBarColor =  Color.parseColor("#0b6fc7");
         int buttonAndFeedbackBarTextColor = Color.parseColor("#ffffff");
-        int buttonColorHighlight = Color.parseColor("#396E99");
-        int buttonColorDisabled = Color.parseColor("#B9CCDE");
+        int buttonColorHighlight = Color.parseColor("#ffffff");
+        int buttonColorDisabled = Color.parseColor("#fefeff");
 
         // For Frame Corner Radius Customization
         int frameCornerRadius = 20;
@@ -67,6 +67,7 @@ public class Config {
         defaultCustomization.getFrameCustomization().borderColor = borderColor;
 
         // Set Overlay Customization
+        defaultCustomization.getOverlayCustomization().showBrandingImage = false;
         defaultCustomization.getOverlayCustomization().backgroundColor = outerBackgroundColor;
 
         // Set Guidance Customization

@@ -11,6 +11,7 @@ import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.common.MapBuilder;
 import com.facebook.react.uimanager.SimpleViewManager;
 import com.facebook.react.uimanager.ThemedReactContext;
+import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.uimanager.annotations.ReactProp;
 import com.facebook.react.uimanager.events.RCTEventEmitter;
 
@@ -280,6 +281,11 @@ public class FaceTecLivenessViewManager extends SimpleViewManager<RNFaceTecLiven
     @ReactProp(name = "androidBorderWidth")
     public void setAndroidBorderWidth(RNFaceTecLivenessButton view, float width) {
         view.setAndroidBorderWidth(width);
+    }
+
+    @ReactProp(name = "customization")
+    public void setCustomization(RNFaceTecLivenessButton view, @Nullable ReadableMap customization) {
+        view.setCustomizationMap(customization);
     }
 
     @Override

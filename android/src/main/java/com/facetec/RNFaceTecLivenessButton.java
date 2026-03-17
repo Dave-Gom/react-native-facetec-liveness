@@ -17,6 +17,7 @@ import androidx.appcompat.widget.AppCompatButton;
 import androidx.core.content.ContextCompat;
 
 import com.facebook.react.bridge.ReactContext;
+import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.modules.core.PermissionAwareActivity;
 import com.facebook.react.modules.core.PermissionListener;
 
@@ -65,6 +66,9 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
     private String readyText = "Start liveness check";
     private String errorText = "Initialization error";
     private String permissionDeniedText = "Camera permission denied";
+
+    // FaceTec SDK customization (received from React Native)
+    private ReadableMap customizationMap = null;
 
     // Android style props (received from React Native)
     private Integer androidBackgroundColor = null;
@@ -416,7 +420,14 @@ public class RNFaceTecLivenessButton extends AppCompatButton implements Permissi
                 FaceTecLivenessModule.getApiEndpoint(),
                 FaceTecLivenessModule.getHeaders()
         );
+        // Apply customization before starting the session
+        FaceTecLivenessModule.applyCustomization(customizationMap, getContext());
+
         sdkInstance.start3DLiveness(activity, activeProcessor);
+    }
+
+    public void setCustomizationMap(ReadableMap map) {
+        this.customizationMap = map;
     }
 
     private Activity getActivityFromContext() {

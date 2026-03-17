@@ -9,6 +9,7 @@ import {
   StyleSheet,
   ViewStyle,
 } from 'react-native';
+import type { FaceTecCustomization } from './FaceTecModule';
 
 /**
  * Resultado del liveness del servidor
@@ -175,6 +176,12 @@ export interface Facetec3DLivenessTestButtonProps {
    * @param state - El nuevo estado del botón
    */
   onStateChange?: (state: ButtonState) => void;
+
+  /**
+   * Custom FaceTec SDK UI customization (colors, corner radius, etc.)
+   * Applied before each liveness session starts
+   */
+  customization?: FaceTecCustomization;
 }
 
 /**
@@ -225,6 +232,8 @@ interface NativeFaceTecButtonProps {
   androidBorderRadius?: number;
   androidBorderColor?: number;
   androidBorderWidth?: number;
+  // FaceTec SDK UI customization
+  customization?: FaceTecCustomization;
 }
 
 // Componente nativo
@@ -283,6 +292,7 @@ export const Facetec3DLivenessTestButton: React.FC<
   errorText = 'Initialization error',
   permissionDeniedText = 'Camera permission denied',
   onStateChange: onStateChangeProp,
+  customization,
 }) => {
   // Track button state internally
   const [buttonState, setButtonState] = useState<ButtonState>('initializing');
@@ -392,6 +402,7 @@ export const Facetec3DLivenessTestButton: React.FC<
       readyText={readyText}
       errorText={errorText}
       permissionDeniedText={permissionDeniedText}
+      customization={customization}
       {...androidStyleProps}
     />
   );

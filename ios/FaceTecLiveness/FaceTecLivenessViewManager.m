@@ -9,5 +9,6 @@ RCT_EXPORT_VIEW_PROPERTY(initializingText, NSString)
 RCT_EXPORT_VIEW_PROPERTY(readyText, NSString)
 RCT_EXPORT_VIEW_PROPERTY(errorText, NSString)
 RCT_EXPORT_VIEW_PROPERTY(permissionDeniedText, NSString)
+RCT_EXPORT_VIEW_PROPERTY(customization, NSDictionary)
 
 @end

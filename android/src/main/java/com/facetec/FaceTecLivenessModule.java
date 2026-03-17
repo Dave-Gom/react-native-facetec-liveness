@@ -18,11 +18,18 @@ import com.facebook.react.bridge.ReadableMapKeySetIterator;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
+import com.facetec.sdk.FaceTecCustomization;
 import com.facetec.sdk.FaceTecInitializationError;
 import com.facetec.sdk.FaceTecSDK;
 import com.facetec.sdk.FaceTecSDKInstance;
 import com.facetec.sdk.FaceTecSessionResult;
 import com.facetec.sdk.FaceTecSessionStatus;
+
+import android.content.res.AssetManager;
+import android.graphics.Color;
+import android.graphics.Typeface;
+
+import com.facebook.react.views.text.ReactFontManager;
 
 import java.lang.ref.WeakReference;
 import java.util.Collections;
@@ -240,6 +247,340 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
             promise.resolve(version);
         } catch (Exception e) {
             promise.reject("ERROR", e.getMessage());
+        }
+    }
+
+    /**
+     * Build a FaceTecCustomization from JS color values.
+     * Falls back to Config defaults for any missing key.
+     */
+    /**
+     * Apply customization from a ReadableMap (from JS props).
+     * Called by the button before starting a session.
+     */
+    public static void applyCustomization(@Nullable ReadableMap map, @Nullable android.content.Context context) {
+        if (map == null || !map.keySetIterator().hasNextKey()) {
+            FaceTecSDK.setCustomization(Config.currentCustomization);
+            FaceTecSDK.setLowLightCustomization(Config.currentLowLightCustomization);
+            FaceTecSDK.setDynamicDimmingCustomization(Config.currentDynamicDimmingCustomization);
+            return;
+        }
+
+        AssetManager assets = context != null ? context.getAssets() : null;
+        FaceTecCustomization base = buildCustomization(map, assets);
+        FaceTecSDK.setCustomization(base);
+        FaceTecSDK.setLowLightCustomization(base);
+        FaceTecSDK.setDynamicDimmingCustomization(base);
+
+        // Dynamic strings (button text, etc.)
+        applyDynamicStrings(map, context);
+    }
+
+    private static FaceTecCustomization buildCustomization(ReadableMap map, @Nullable AssetManager assets) {
+        FaceTecCustomization base = Config.retrieveConfigurationWizardCustomization();
+
+        // -- Frame & Overlay --
+        Integer frameColor = parseColorFromMap(map, "frameColor");
+        Integer borderColor = parseColorFromMap(map, "borderColor");
+        Integer outerBackgroundColor = parseColorFromMap(map, "outerBackgroundColor");
+
+        if (frameColor != null) {
+            base.getFrameCustomization().backgroundColor = frameColor;
+            base.getGuidanceCustomization().backgroundColors = frameColor;
+            base.getResultScreenCustomization().backgroundColors = frameColor;
+            base.getIdScanCustomization().selectionScreenBackgroundColors = frameColor;
+            base.getIdScanCustomization().reviewScreenBackgroundColors = frameColor;
+            base.getIdScanCustomization().captureScreenBackgroundColor = frameColor;
+        }
+        if (borderColor != null) {
+            base.getFrameCustomization().borderColor = borderColor;
+            base.getGuidanceCustomization().retryScreenImageBorderColor = borderColor;
+            base.getGuidanceCustomization().retryScreenOvalStrokeColor = borderColor;
+            base.getIdScanCustomization().captureFrameStrokeColor = borderColor;
+        }
+        if (outerBackgroundColor != null) base.getOverlayCustomization().backgroundColor = outerBackgroundColor;
+
+        // -- Oval --
+        Integer ovalColor = parseColorFromMap(map, "ovalColor");
+        Integer dualSpinnerColor = parseColorFromMap(map, "dualSpinnerColor");
+        if (ovalColor != null) base.getOvalCustomization().strokeColor = ovalColor;
+        if (dualSpinnerColor != null) {
+            base.getOvalCustomization().progressColor1 = dualSpinnerColor;
+            base.getOvalCustomization().progressColor2 = dualSpinnerColor;
+        }
+
+        // -- Ready Screen Header --
+        if (map.hasKey("readyScreenHeaderText")) {
+            String text = map.getString("readyScreenHeaderText");
+            if (text != null) base.getGuidanceCustomization().readyScreenHeaderAttributedString = text;
+        }
+        if (map.hasKey("readyScreenHeaderStyles")) {
+            ReadableMap styles = map.getMap("readyScreenHeaderStyles");
+            if (styles != null) {
+                Integer c = parseColorFromMap(styles, "color");
+                if (c != null) base.getGuidanceCustomization().readyScreenHeaderTextColor = c;
+                String ff = styles.hasKey("fontFamily") ? styles.getString("fontFamily") : null;
+                if (ff != null && !ff.isEmpty()) {
+                    android.graphics.Typeface tf = resolveTypeface(ff, assets);
+                    base.getGuidanceCustomization().readyScreenHeaderFont = tf;
+                }
+            }
+        }
+
+        // -- Ready Screen Subtext --
+        if (map.hasKey("readyScreenSubtext")) {
+            String text = map.getString("readyScreenSubtext");
+            if (text != null) base.getGuidanceCustomization().readyScreenSubtextAttributedString = text;
+        }
+        if (map.hasKey("readyScreenSubtextStyles")) {
+            ReadableMap styles = map.getMap("readyScreenSubtextStyles");
+            if (styles != null) {
+                Integer c = parseColorFromMap(styles, "color");
+                if (c != null) base.getGuidanceCustomization().readyScreenSubtextTextColor = c;
+                String ff = styles.hasKey("fontFamily") ? styles.getString("fontFamily") : null;
+                if (ff != null && !ff.isEmpty()) {
+                    android.graphics.Typeface tf = resolveTypeface(ff, assets);
+                    base.getGuidanceCustomization().readyScreenSubtextFont = tf;
+                }
+            }
+        }
+
+        // -- Action Button --
+        if (map.hasKey("actionButtonStyles")) {
+            ReadableMap styles = map.getMap("actionButtonStyles");
+            if (styles != null) {
+                Integer bgColor = parseColorFromMap(styles, "backgroundColor");
+                Integer txtColor = parseColorFromMap(styles, "textColor");
+                Integer hlColor = parseColorFromMap(styles, "highlightBackgroundColor");
+                Integer disColor = parseColorFromMap(styles, "disabledBackgroundColor");
+
+                if (bgColor != null) {
+                    base.getGuidanceCustomization().buttonBackgroundNormalColor = bgColor;
+                    base.getIdScanCustomization().buttonBackgroundNormalColor = bgColor;
+                    base.getResultScreenCustomization().activityIndicatorColor = bgColor;
+                    base.getResultScreenCustomization().resultAnimationBackgroundColor = bgColor;
+                    base.getResultScreenCustomization().uploadProgressFillColor = bgColor;
+                }
+                if (txtColor != null) {
+                    base.getGuidanceCustomization().buttonTextNormalColor = txtColor;
+                    base.getGuidanceCustomization().buttonTextDisabledColor = txtColor;
+                    base.getGuidanceCustomization().buttonTextHighlightColor = txtColor;
+                    base.getIdScanCustomization().buttonTextNormalColor = txtColor;
+                    base.getIdScanCustomization().buttonTextDisabledColor = txtColor;
+                    base.getIdScanCustomization().buttonTextHighlightColor = txtColor;
+                    base.getResultScreenCustomization().resultAnimationForegroundColor = txtColor;
+                }
+                if (hlColor != null) {
+                    base.getGuidanceCustomization().buttonBackgroundHighlightColor = hlColor;
+                    base.getIdScanCustomization().buttonBackgroundHighlightColor = hlColor;
+                }
+                if (disColor != null) {
+                    base.getGuidanceCustomization().buttonBackgroundDisabledColor = disColor;
+                    base.getIdScanCustomization().buttonBackgroundDisabledColor = disColor;
+                }
+                Integer radius = intFromMap(styles, "cornerRadius");
+                if (radius != null) base.getGuidanceCustomization().buttonCornerRadius = radius;
+
+                String ff = styles.hasKey("fontFamily") ? styles.getString("fontFamily") : null;
+                if (ff != null && !ff.isEmpty()) {
+                    android.graphics.Typeface tf = resolveTypeface(ff, assets);
+                    base.getGuidanceCustomization().buttonFont = tf;
+                    base.getIdScanCustomization().buttonFont = tf;
+                }
+            }
+        }
+
+        // -- Retry Screen Header --
+        if (map.hasKey("retryScreenHeaderText")) {
+            String text = map.getString("retryScreenHeaderText");
+            if (text != null) base.getGuidanceCustomization().retryScreenHeaderAttributedString = text;
+        }
+        if (map.hasKey("retryScreenHeaderStyles")) {
+            ReadableMap styles = map.getMap("retryScreenHeaderStyles");
+            if (styles != null) {
+                Integer c = parseColorFromMap(styles, "color");
+                if (c != null) base.getGuidanceCustomization().retryScreenHeaderTextColor = c;
+                String ff = styles.hasKey("fontFamily") ? styles.getString("fontFamily") : null;
+                if (ff != null && !ff.isEmpty()) {
+                    android.graphics.Typeface tf = resolveTypeface(ff, assets);
+                    base.getGuidanceCustomization().retryScreenHeaderFont = tf;
+                }
+            }
+        }
+
+        // -- Retry Screen Subtext --
+        if (map.hasKey("retryScreenSubtext")) {
+            String text = map.getString("retryScreenSubtext");
+            if (text != null) base.getGuidanceCustomization().retryScreenSubtextAttributedString = text;
+        }
+        if (map.hasKey("retryScreenSubtextStyles")) {
+            ReadableMap styles = map.getMap("retryScreenSubtextStyles");
+            if (styles != null) {
+                Integer c = parseColorFromMap(styles, "color");
+                if (c != null) base.getGuidanceCustomization().retryScreenSubtextTextColor = c;
+                String ff = styles.hasKey("fontFamily") ? styles.getString("fontFamily") : null;
+                if (ff != null && !ff.isEmpty()) {
+                    android.graphics.Typeface tf = resolveTypeface(ff, assets);
+                    base.getGuidanceCustomization().retryScreenSubtextFont = tf;
+                }
+            }
+        }
+
+        // -- Feedback Bar --
+        if (map.hasKey("feedbackBarStyles")) {
+            ReadableMap styles = map.getMap("feedbackBarStyles");
+            if (styles != null) {
+                Integer bgColor = parseColorFromMap(styles, "backgroundColor");
+                Integer txtColor = parseColorFromMap(styles, "textColor");
+                if (bgColor != null) {
+                    base.getFeedbackCustomization().backgroundColors = bgColor;
+                    base.getIdScanCustomization().reviewScreenTextBackgroundColor = bgColor;
+                    base.getIdScanCustomization().captureScreenTextBackgroundColor = bgColor;
+                }
+                if (txtColor != null) base.getFeedbackCustomization().textColor = txtColor;
+                Integer radius = intFromMap(styles, "cornerRadius");
+                if (radius != null) base.getFeedbackCustomization().cornerRadius = radius;
+                String ff = styles.hasKey("fontFamily") ? styles.getString("fontFamily") : null;
+                if (ff != null && !ff.isEmpty()) {
+                    base.getFeedbackCustomization().textFont = resolveTypeface(ff, assets);
+                }
+            }
+        }
+
+        // -- Result Screen Message --
+        if (map.hasKey("resultMessageStyles")) {
+            ReadableMap styles = map.getMap("resultMessageStyles");
+            if (styles != null) {
+                Integer c = parseColorFromMap(styles, "color");
+                if (c != null) base.getResultScreenCustomization().foregroundColor = c;
+                String ff = styles.hasKey("fontFamily") ? styles.getString("fontFamily") : null;
+                if (ff != null && !ff.isEmpty()) {
+                    base.getResultScreenCustomization().messageFont = resolveTypeface(ff, assets);
+                }
+            }
+        }
+
+        return base;
+    }
+
+    /** Map of JS feedbackTexts keys → FaceTec Android string resource names. */
+    private static final String[][] FEEDBACK_KEY_MAP = {
+        {"moveCloser",                   "FaceTec_feedback_move_phone_closer"},
+        {"moveAway",                     "FaceTec_feedback_move_phone_away"},
+        {"centerFace",                   "FaceTec_feedback_center_face"},
+        {"faceNotFound",                 "FaceTec_feedback_face_not_found"},
+        {"holdSteady",                   "FaceTec_feedback_hold_steady"},
+        {"faceNotUpright",               "FaceTec_feedback_face_not_upright"},
+        {"faceNotLookingStraight",       "FaceTec_feedback_face_not_looking_straight_ahead"},
+        {"useEvenLighting",              "FaceTec_feedback_use_even_lighting"},
+        {"moveToEyeLevel",              "FaceTec_feedback_move_phone_to_eye_level"},
+        {"presessionFrameYourFace",      "FaceTec_presession_frame_your_face"},
+        {"presessionLookStraight",       "FaceTec_presession_position_face_straight_in_oval"},
+        {"presessionNeutralExpression",  "FaceTec_presession_neutral_expression"},
+        {"presessionRemoveDarkGlasses",  "FaceTec_presession_remove_dark_glasses"},
+        {"presessionConditionsTooBright","FaceTec_presession_conditions_too_bright"},
+        {"presessionBrightenEnvironment","FaceTec_presession_brighten_your_environment"},
+    };
+
+    /**
+     * Apply dynamic strings (button text, feedback texts) via FaceTecSDK.setDynamicStrings.
+     */
+    private static void applyDynamicStrings(ReadableMap map, @Nullable android.content.Context context) {
+        if (context == null) return;
+
+        boolean hasButton = map.hasKey("actionButtonText");
+        boolean hasFeedback = map.hasKey("feedbackTexts");
+        if (!hasButton && !hasFeedback) return;
+
+        Map<Integer, String> dynamicStrings = new HashMap<>();
+        android.content.res.Resources res = context.getResources();
+        String pkg = context.getPackageName();
+
+        // Action button text
+        if (hasButton) {
+            String buttonText = map.getString("actionButtonText");
+            if (buttonText != null) {
+                int resId = res.getIdentifier("FaceTec_action_im_ready", "string", pkg);
+                if (resId != 0) dynamicStrings.put(resId, buttonText);
+            }
+        }
+
+        // Feedback texts
+        if (hasFeedback) {
+            ReadableMap feedbackTexts = map.getMap("feedbackTexts");
+            if (feedbackTexts != null) {
+                for (String[] entry : FEEDBACK_KEY_MAP) {
+                    String jsKey = entry[0];
+                    String nativeKey = entry[1];
+                    if (feedbackTexts.hasKey(jsKey)) {
+                        String text = feedbackTexts.getString(jsKey);
+                        if (text != null) {
+                            int resId = res.getIdentifier(nativeKey, "string", pkg);
+                            if (resId != 0) dynamicStrings.put(resId, text);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!dynamicStrings.isEmpty()) {
+            FaceTecSDK.setDynamicStrings(dynamicStrings);
+        }
+    }
+
+    // -- Helpers --
+
+    @Nullable
+    private static Integer parseColorFromMap(ReadableMap map, String key) {
+        if (!map.hasKey(key)) return null;
+        try {
+            String hex = map.getString(key);
+            return parseColor(hex);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    @Nullable
+    private static Integer intFromMap(ReadableMap map, String key) {
+        if (!map.hasKey(key)) return null;
+        try {
+            return map.getInt(key);
+        } catch (Exception e) {
+            try { return (int) map.getDouble(key); } catch (Exception ex) { return null; }
+        }
+    }
+
+    /**
+     * Resolve a font family name to a Typeface using React Native's font manager.
+     * This correctly loads custom fonts bundled in assets/fonts/.
+     */
+    @NonNull
+    private static Typeface resolveTypeface(String fontFamily, @Nullable AssetManager assets) {
+        if (assets != null) {
+            try {
+                return ReactFontManager.getInstance()
+                        .getTypeface(fontFamily, Typeface.NORMAL, assets);
+            } catch (Exception ignored) {}
+        }
+        return Typeface.create(fontFamily, Typeface.NORMAL);
+    }
+
+    @Nullable
+    private static Integer parseColor(String hex) {
+        if (hex == null || hex.isEmpty()) return null;
+        try {
+            if (hex.length() == 9 && hex.startsWith("#")) {
+                long value = Long.parseLong(hex.substring(1), 16);
+                int r = (int) ((value >> 24) & 0xFF);
+                int g = (int) ((value >> 16) & 0xFF);
+                int b = (int) ((value >> 8) & 0xFF);
+                int a = (int) (value & 0xFF);
+                return Color.argb(a, r, g, b);
+            }
+            return Color.parseColor(hex);
+        } catch (Exception e) {
+            return null;
         }
     }
 }

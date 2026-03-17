@@ -36,9 +36,9 @@ repositories {
         // React Native local maven
         url "$rootDir/../node_modules/react-native/android"
     }
-    // FaceTec SDK - if you have a local AAR file
+    // FaceTec SDK AAR – lives in the project root's android/libs/ directory
     flatDir {
-        dirs 'libs'
+        dirs "$rootDir/libs"
     }
 }
 
@@ -47,7 +47,7 @@ dependencies {
     compileOnly "com.facebook.react:react-android"
 
     // FaceTec SDK
-    // Option 1: Local AAR file (put facetec-sdk-x.x.x.aar in android/libs/)
+    // Local AAR file (placed in <project-root>/android/libs/)
     implementation(name: 'facetec-sdk-10.0.38', ext: 'aar')
 
     // Option 2: If FaceTec provides a Maven repository

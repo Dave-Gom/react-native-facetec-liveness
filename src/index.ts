@@ -1,5 +1,12 @@
 export { FaceTec, FaceTecErrorType } from './FaceTecModule';
-export type { FaceTecInitConfig } from './FaceTecModule';
+export type {
+  FaceTecInitConfig,
+  FaceTecCustomization,
+  FaceTecTextStyles,
+  FaceTecButtonStyles,
+  FaceTecFeedbackBarStyles,
+  FaceTecFeedbackTexts,
+} from './FaceTecModule';
 export { Facetec3DLivenessTestButton } from './Facetec3DLivenessTestButton';
 export type {
   LivenessResponse,
