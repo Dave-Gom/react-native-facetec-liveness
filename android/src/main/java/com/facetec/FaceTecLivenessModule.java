@@ -1,10 +1,16 @@
 package com.facetec;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.res.AssetManager;
+import android.graphics.Color;
+import android.graphics.Typeface;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 
 import com.facebook.react.bridge.ActivityEventListener;
 import com.facebook.react.bridge.Arguments;
@@ -16,7 +22,9 @@ import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.ReadableMapKeySetIterator;
 import com.facebook.react.bridge.WritableMap;
-import com.facebook.react.modules.core.DeviceEventManagerModule;
+import com.facebook.react.modules.core.PermissionAwareActivity;
+import com.facebook.react.modules.core.PermissionListener;
+import com.facebook.react.views.text.ReactFontManager;
 
 import com.facetec.sdk.FaceTecCustomization;
 import com.facetec.sdk.FaceTecInitializationError;
@@ -25,60 +33,39 @@ import com.facetec.sdk.FaceTecSDKInstance;
 import com.facetec.sdk.FaceTecSessionResult;
 import com.facetec.sdk.FaceTecSessionStatus;
 
-import android.content.res.AssetManager;
-import android.graphics.Color;
-import android.graphics.Typeface;
+import org.json.JSONObject;
 
-import com.facebook.react.views.text.ReactFontManager;
-
-import java.lang.ref.WeakReference;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
     private static final String MODULE_NAME = "FaceTecLivenessModule";
+    private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
 
     private final ReactApplicationContext reactContext;
-    private static WeakReference<RNFaceTecLivenessButton> currentButtonRef;
 
-    // --- Singleton config store (written by initialize(), read by button) ---
-    // All fields are volatile to ensure cross-thread visibility between
-    // the RN module thread (writes) and the UI thread (button reads).
-    // Maps are stored as unmodifiable to prevent mutation after assignment.
+    // --- Singleton config store (written by initialize(), read by startLivenessCheck()) ---
     private static volatile String sDeviceKeyIdentifier = "";
     private static volatile String sApiEndpoint = "";
     private static volatile Map<String, String> sHeaders = Collections.emptyMap();
     private static volatile FaceTecSDKInstance sSdkInstance = null;
     private static volatile boolean sIsInitialized = false;
     private static volatile boolean sIsInitializing = false;
-    // Retain the init processor during initialization to prevent orphaning
+    private static volatile String sInitError = null;
     private static volatile SessionRequestProcessor sInitProcessor = null;
 
-    public static String getDeviceKeyIdentifier() { return sDeviceKeyIdentifier; }
-    public static String getApiEndpoint() { return sApiEndpoint; }
-    public static Map<String, String> getHeaders() { return sHeaders; }
-    public static FaceTecSDKInstance getSdkInstance() { return sSdkInstance; }
-    public static boolean isSDKInitialized() { return sIsInitialized; }
+    // Session tracking
+    private volatile Promise mPendingPromise = null;
+    private volatile SessionRequestProcessor mActiveProcessor = null;
 
     private final ActivityEventListener activityEventListener = new BaseActivityEventListener() {
         @Override
         public void onActivityResult(Activity activity, int requestCode, int resultCode, @Nullable Intent data) {
             if (requestCode == FaceTecSDK.REQUEST_CODE_SESSION) {
-                // Get the result ONCE - getActivitySessionResult may consume the data
                 FaceTecSessionResult result = FaceTecSDK.getActivitySessionResult(requestCode, resultCode, data);
-
                 if (result != null) {
-                    FaceTecSessionStatus status = result.getStatus();
-
-                    // Notify the current button if exists - pass the result directly
-                    RNFaceTecLivenessButton button = currentButtonRef != null ? currentButtonRef.get() : null;
-                    if (button != null) {
-                        button.handleSessionResult(result);
-                    }
-
-                    // Also emit a global event that can be listened to
-                    emitSessionResult(status, result);
+                    handleSessionResult(result);
                 }
             }
         }
@@ -96,26 +83,15 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
         return MODULE_NAME;
     }
 
-    /**
-     * Register the current button for activity result handling
-     */
-    public static void setCurrentButton(RNFaceTecLivenessButton button) {
-        currentButtonRef = new WeakReference<>(button);
-    }
+    // MARK: - initialize
 
-    /**
-     * Initialize the FaceTec SDK with config from JS.
-     * Called once from JS: FaceTec.initialize({ deviceKeyIdentifier, apiEndpoint?, headers? })
-     */
     @ReactMethod
     public void initialize(ReadableMap config, Promise promise) {
-        // Guard: already initialized
         if (sIsInitialized) {
             promise.resolve(true);
             return;
         }
 
-        // Guard: initialization already in progress
         if (sIsInitializing) {
             promise.reject("INIT_ERROR", "Initialization already in progress");
             return;
@@ -148,8 +124,7 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
         }
 
         sIsInitializing = true;
-
-        // Store config (headers wrapped as unmodifiable to prevent mutation)
+        sInitError = null;
         sDeviceKeyIdentifier = deviceKeyIdentifier;
         sApiEndpoint = apiEndpoint;
         sHeaders = Collections.unmodifiableMap(headers);
@@ -158,14 +133,53 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
         final String finalApiEndpoint = apiEndpoint;
         final Map<String, String> finalHeaders = sHeaders;
 
+        // Check camera permission before initializing
+        Activity activity = getCurrentActivity();
+        if (activity == null) {
+            sIsInitializing = false;
+            promise.reject("INIT_ERROR", "Activity not available");
+            return;
+        }
+
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA)
+                == PackageManager.PERMISSION_GRANTED) {
+            performSDKInitialization(finalDeviceKeyIdentifier, finalApiEndpoint, finalHeaders, promise);
+        } else if (activity instanceof PermissionAwareActivity) {
+            ((PermissionAwareActivity) activity).requestPermissions(
+                    new String[]{Manifest.permission.CAMERA},
+                    CAMERA_PERMISSION_REQUEST_CODE,
+                    new PermissionListener() {
+                        @Override
+                        public boolean onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+                            if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
+                                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                                    performSDKInitialization(finalDeviceKeyIdentifier, finalApiEndpoint, finalHeaders, promise);
+                                } else {
+                                    sIsInitializing = false;
+                                    sInitError = "Camera permission denied";
+                                    promise.reject("permission_denied", "Camera permission denied");
+                                }
+                                return true;
+                            }
+                            return false;
+                        }
+                    }
+            );
+        } else {
+            sIsInitializing = false;
+            sInitError = "Camera permission denied";
+            promise.reject("permission_denied", "Cannot request camera permission");
+        }
+    }
+
+    private void performSDKInitialization(String deviceKeyIdentifier, String apiEndpoint, Map<String, String> headers, Promise promise) {
         try {
-            // Retain the init processor to prevent orphaning during initialization
-            SessionRequestProcessor initProcessor = new SessionRequestProcessor(finalDeviceKeyIdentifier, finalApiEndpoint, finalHeaders);
+            SessionRequestProcessor initProcessor = new SessionRequestProcessor(deviceKeyIdentifier, apiEndpoint, headers);
             sInitProcessor = initProcessor;
 
             FaceTecSDK.initializeWithSessionRequest(
                     reactContext,
-                    finalDeviceKeyIdentifier,
+                    deviceKeyIdentifier,
                     initProcessor,
                     new FaceTecSDK.InitializeCallback() {
                         @Override
@@ -181,6 +195,7 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
                         public void onError(@NonNull FaceTecInitializationError error) {
                             sIsInitialized = false;
                             sIsInitializing = false;
+                            sInitError = error.name();
                             sSdkInstance = null;
                             sInitProcessor = null;
                             promise.reject("INIT_ERROR", error.name());
@@ -190,56 +205,42 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
         } catch (Exception e) {
             sIsInitialized = false;
             sIsInitializing = false;
+            sInitError = e.getMessage();
             sSdkInstance = null;
             sInitProcessor = null;
             promise.reject("INIT_ERROR", e.getMessage());
         }
     }
 
-    /**
-     * Emit session result as a global event
-     */
-    private void emitSessionResult(FaceTecSessionStatus status, FaceTecSessionResult result) {
-        WritableMap params = Arguments.createMap();
-        params.putBoolean("success", status == FaceTecSessionStatus.SESSION_COMPLETED);
-        params.putString("status", status.name());
-        params.putString("message", getMessageForStatus(status));
+    // MARK: - isInitialized
 
-        sendEvent("FaceTecLivenessResult", params);
-    }
-
-    private String getMessageForStatus(FaceTecSessionStatus status) {
-        switch (status) {
-            case SESSION_COMPLETED:
-                return "Liveness completed successfully";
-            case USER_CANCELLED_FACE_SCAN:
-                return "User cancelled the process";
-            case REQUEST_ABORTED:
-                return "Request aborted";
-            default:
-                return "Status: " + status.name();
-        }
-    }
-
-    private void sendEvent(String eventName, @Nullable WritableMap params) {
-        if (reactContext.hasActiveCatalystInstance()) {
-            reactContext
-                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                    .emit(eventName, params);
-        }
-    }
-
-    /**
-     * Check if FaceTec SDK is initialized
-     */
     @ReactMethod
     public void isInitialized(Promise promise) {
         promise.resolve(sIsInitialized);
     }
 
-    /**
-     * Get SDK version
-     */
+    // MARK: - getInitializationStatus
+
+    @ReactMethod
+    public void getInitializationStatus(Promise promise) {
+        WritableMap result = Arguments.createMap();
+
+        if (sIsInitialized) {
+            result.putString("status", "initialized");
+        } else if (sIsInitializing) {
+            result.putString("status", "initializing");
+        } else if (sInitError != null) {
+            result.putString("status", "error");
+            result.putString("error", sInitError);
+        } else {
+            result.putString("status", "idle");
+        }
+
+        promise.resolve(result);
+    }
+
+    // MARK: - getSDKVersion
+
     @ReactMethod
     public void getSDKVersion(Promise promise) {
         try {
@@ -250,13 +251,155 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
         }
     }
 
-    /**
-     * Build a FaceTecCustomization from JS color values.
-     * Falls back to Config defaults for any missing key.
-     */
+    // MARK: - startLivenessCheck
+
+    @ReactMethod
+    public void startLivenessCheck(ReadableMap customization, Promise promise) {
+        if (!sIsInitialized || sSdkInstance == null) {
+            promise.reject("init_error", "FaceTec SDK is not initialized");
+            return;
+        }
+
+        if (mPendingPromise != null) {
+            promise.reject("internal_error", "A liveness session is already in progress");
+            return;
+        }
+
+        Activity activity = getCurrentActivity();
+        if (activity == null) {
+            promise.reject("internal_error", "Activity not available");
+            return;
+        }
+
+        mPendingPromise = promise;
+        launchSession(activity, customization);
+    }
+
+    private void launchSession(Activity activity, ReadableMap customization) {
+        // Apply customization
+        applyCustomization(customization, activity);
+
+        // Create processor
+        mActiveProcessor = new SessionRequestProcessor(
+                sDeviceKeyIdentifier, sApiEndpoint, sHeaders
+        );
+
+        // Start session
+        sSdkInstance.start3DLiveness(activity, mActiveProcessor);
+    }
+
+    // MARK: - Session Result Handling
+
+    private void handleSessionResult(FaceTecSessionResult result) {
+        Promise promise = mPendingPromise;
+        mPendingPromise = null;
+
+        if (promise == null) return;
+
+        FaceTecSessionStatus status = result.getStatus();
+        FaceTecServerResponse serverResponse = mActiveProcessor != null
+                ? mActiveProcessor.getServerResponse() : null;
+
+        // Cleanup processor
+        if (mActiveProcessor != null) {
+            mActiveProcessor.cancel();
+            mActiveProcessor.clearServerResponse();
+            mActiveProcessor = null;
+        }
+
+        if (serverResponse != null) {
+            // Resolve with server response
+            WritableMap response = buildResponseMap(serverResponse);
+            promise.resolve(response);
+        } else {
+            // Reject with error
+            if (status == FaceTecSessionStatus.USER_CANCELLED_FACE_SCAN ||
+                    status == FaceTecSessionStatus.USER_CANCELLED_ID_SCAN) {
+                promise.reject("session_cancelled", "User cancelled the session");
+            } else if (status == FaceTecSessionStatus.REQUEST_ABORTED) {
+                promise.reject("network_error", "Session request was aborted");
+            } else {
+                promise.reject("network_error", "Session ended without server response: " + status.name());
+            }
+        }
+    }
+
+    // MARK: - Response Builder
+
+    private WritableMap buildResponseMap(FaceTecServerResponse serverResponse) {
+        WritableMap event = Arguments.createMap();
+
+        event.putBoolean("success", serverResponse.isSuccess());
+        event.putBoolean("didError", serverResponse.isDidError());
+        event.putString("responseBlob", serverResponse.getResponseBlob());
+
+        try {
+            JSONObject rawData = serverResponse.getRawData();
+
+            if (rawData.has("result")) {
+                JSONObject rawResult = rawData.getJSONObject("result");
+                WritableMap resultMap = Arguments.createMap();
+                resultMap.putBoolean("livenessProven", serverResponse.isLivenessProven());
+                if (rawResult.has("ageV2GroupEnumInt")) {
+                    resultMap.putInt("ageV2GroupEnumInt", rawResult.optInt("ageV2GroupEnumInt"));
+                }
+                event.putMap("result", resultMap);
+            }
+
+            if (rawData.has("serverInfo")) {
+                JSONObject serverInfo = rawData.getJSONObject("serverInfo");
+                WritableMap serverInfoMap = Arguments.createMap();
+                if (serverInfo.has("coreServerSDKVersion"))
+                    serverInfoMap.putString("coreServerSDKVersion", serverInfo.optString("coreServerSDKVersion"));
+                if (serverInfo.has("mode"))
+                    serverInfoMap.putString("mode", serverInfo.optString("mode"));
+                if (serverInfo.has("notice"))
+                    serverInfoMap.putString("notice", serverInfo.optString("notice"));
+                event.putMap("serverInfo", serverInfoMap);
+            }
+
+            if (rawData.has("additionalSessionData")) {
+                JSONObject sessionData = rawData.getJSONObject("additionalSessionData");
+                WritableMap sessionDataMap = Arguments.createMap();
+                if (sessionData.has("appID"))
+                    sessionDataMap.putString("appID", sessionData.optString("appID"));
+                if (sessionData.has("deviceModel"))
+                    sessionDataMap.putString("deviceModel", sessionData.optString("deviceModel"));
+                if (sessionData.has("deviceSDKVersion"))
+                    sessionDataMap.putString("deviceSDKVersion", sessionData.optString("deviceSDKVersion"));
+                if (sessionData.has("installationID"))
+                    sessionDataMap.putString("installationID", sessionData.optString("installationID"));
+                if (sessionData.has("platform"))
+                    sessionDataMap.putString("platform", sessionData.optString("platform"));
+                event.putMap("additionalSessionData", sessionDataMap);
+            }
+
+            if (rawData.has("httpCallInfo")) {
+                JSONObject httpCallInfo = rawData.getJSONObject("httpCallInfo");
+                WritableMap httpCallInfoMap = Arguments.createMap();
+                if (httpCallInfo.has("date"))
+                    httpCallInfoMap.putString("date", httpCallInfo.optString("date"));
+                if (httpCallInfo.has("epochSecond"))
+                    httpCallInfoMap.putDouble("epochSecond", httpCallInfo.optDouble("epochSecond"));
+                if (httpCallInfo.has("path"))
+                    httpCallInfoMap.putString("path", httpCallInfo.optString("path"));
+                if (httpCallInfo.has("requestMethod"))
+                    httpCallInfoMap.putString("requestMethod", httpCallInfo.optString("requestMethod"));
+                if (httpCallInfo.has("tid"))
+                    httpCallInfoMap.putString("tid", httpCallInfo.optString("tid"));
+                event.putMap("httpCallInfo", httpCallInfoMap);
+            }
+        } catch (Exception e) {
+            // Ignore JSON parsing errors
+        }
+
+        return event;
+    }
+
+    // MARK: - Customization
+
     /**
      * Apply customization from a ReadableMap (from JS props).
-     * Called by the button before starting a session.
      */
     public static void applyCustomization(@Nullable ReadableMap map, @Nullable android.content.Context context) {
         if (map == null || !map.keySetIterator().hasNextKey()) {
@@ -272,7 +415,6 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
         FaceTecSDK.setLowLightCustomization(base);
         FaceTecSDK.setDynamicDimmingCustomization(base);
 
-        // Dynamic strings (button text, etc.)
         applyDynamicStrings(map, context);
     }
 
@@ -321,7 +463,7 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
                 if (c != null) base.getGuidanceCustomization().readyScreenHeaderTextColor = c;
                 String ff = styles.hasKey("fontFamily") ? styles.getString("fontFamily") : null;
                 if (ff != null && !ff.isEmpty()) {
-                    android.graphics.Typeface tf = resolveTypeface(ff, assets);
+                    Typeface tf = resolveTypeface(ff, assets);
                     base.getGuidanceCustomization().readyScreenHeaderFont = tf;
                 }
             }
@@ -339,7 +481,7 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
                 if (c != null) base.getGuidanceCustomization().readyScreenSubtextTextColor = c;
                 String ff = styles.hasKey("fontFamily") ? styles.getString("fontFamily") : null;
                 if (ff != null && !ff.isEmpty()) {
-                    android.graphics.Typeface tf = resolveTypeface(ff, assets);
+                    Typeface tf = resolveTypeface(ff, assets);
                     base.getGuidanceCustomization().readyScreenSubtextFont = tf;
                 }
             }
@@ -383,7 +525,7 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
 
                 String ff = styles.hasKey("fontFamily") ? styles.getString("fontFamily") : null;
                 if (ff != null && !ff.isEmpty()) {
-                    android.graphics.Typeface tf = resolveTypeface(ff, assets);
+                    Typeface tf = resolveTypeface(ff, assets);
                     base.getGuidanceCustomization().buttonFont = tf;
                     base.getIdScanCustomization().buttonFont = tf;
                 }
@@ -402,7 +544,7 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
                 if (c != null) base.getGuidanceCustomization().retryScreenHeaderTextColor = c;
                 String ff = styles.hasKey("fontFamily") ? styles.getString("fontFamily") : null;
                 if (ff != null && !ff.isEmpty()) {
-                    android.graphics.Typeface tf = resolveTypeface(ff, assets);
+                    Typeface tf = resolveTypeface(ff, assets);
                     base.getGuidanceCustomization().retryScreenHeaderFont = tf;
                 }
             }
@@ -420,7 +562,7 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
                 if (c != null) base.getGuidanceCustomization().retryScreenSubtextTextColor = c;
                 String ff = styles.hasKey("fontFamily") ? styles.getString("fontFamily") : null;
                 if (ff != null && !ff.isEmpty()) {
-                    android.graphics.Typeface tf = resolveTypeface(ff, assets);
+                    Typeface tf = resolveTypeface(ff, assets);
                     base.getGuidanceCustomization().retryScreenSubtextFont = tf;
                 }
             }
@@ -463,6 +605,16 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
         return base;
     }
 
+    /** Map of JS resultScreenTexts keys → FaceTec Android string resource names. */
+    private static final String[][] RESULT_SCREEN_KEY_MAP = {
+        {"uploadMessage",               "FaceTec_result_facescan_upload_message"},
+        {"uploadMessageStillUploading", "FaceTec_result_facescan_upload_message_still_uploading"},
+        {"successMessage",              "FaceTec_result_facescan_success_3d_liveness_prior_to_idscan_message"},
+        {"successEnrollmentMessage",    "FaceTec_result_facescan_success_3d_enrollment_message"},
+        {"successReverificationMessage","FaceTec_result_facescan_success_3d_3d_reverification_message"},
+        {"successLivenessAndIdMessage", "FaceTec_result_facescan_success_3d_liveness_and_official_id_photo_message"},
+    };
+
     /** Map of JS feedbackTexts keys → FaceTec Android string resource names. */
     private static final String[][] FEEDBACK_KEY_MAP = {
         {"moveCloser",                   "FaceTec_feedback_move_phone_closer"},
@@ -482,21 +634,18 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
         {"presessionBrightenEnvironment","FaceTec_presession_brighten_your_environment"},
     };
 
-    /**
-     * Apply dynamic strings (button text, feedback texts) via FaceTecSDK.setDynamicStrings.
-     */
     private static void applyDynamicStrings(ReadableMap map, @Nullable android.content.Context context) {
         if (context == null) return;
 
         boolean hasButton = map.hasKey("actionButtonText");
         boolean hasFeedback = map.hasKey("feedbackTexts");
-        if (!hasButton && !hasFeedback) return;
+        boolean hasResultScreen = map.hasKey("resultScreenTexts");
+        if (!hasButton && !hasFeedback && !hasResultScreen) return;
 
         Map<Integer, String> dynamicStrings = new HashMap<>();
         android.content.res.Resources res = context.getResources();
         String pkg = context.getPackageName();
 
-        // Action button text
         if (hasButton) {
             String buttonText = map.getString("actionButtonText");
             if (buttonText != null) {
@@ -505,7 +654,6 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
             }
         }
 
-        // Feedback texts
         if (hasFeedback) {
             ReadableMap feedbackTexts = map.getMap("feedbackTexts");
             if (feedbackTexts != null) {
@@ -523,12 +671,29 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
             }
         }
 
+        if (hasResultScreen) {
+            ReadableMap resultScreenTexts = map.getMap("resultScreenTexts");
+            if (resultScreenTexts != null) {
+                for (String[] entry : RESULT_SCREEN_KEY_MAP) {
+                    String jsKey = entry[0];
+                    String nativeKey = entry[1];
+                    if (resultScreenTexts.hasKey(jsKey)) {
+                        String text = resultScreenTexts.getString(jsKey);
+                        if (text != null) {
+                            int resId = res.getIdentifier(nativeKey, "string", pkg);
+                            if (resId != 0) dynamicStrings.put(resId, text);
+                        }
+                    }
+                }
+            }
+        }
+
         if (!dynamicStrings.isEmpty()) {
             FaceTecSDK.setDynamicStrings(dynamicStrings);
         }
     }
 
-    // -- Helpers --
+    // MARK: - Helpers
 
     @Nullable
     private static Integer parseColorFromMap(ReadableMap map, String key) {
@@ -551,10 +716,6 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
         }
     }
 
-    /**
-     * Resolve a font family name to a Typeface using React Native's font manager.
-     * This correctly loads custom fonts bundled in assets/fonts/.
-     */
     @NonNull
     private static Typeface resolveTypeface(String fontFamily, @Nullable AssetManager assets) {
         if (assets != null) {

@@ -1,9 +1,10 @@
 import Foundation
 import FaceTecSDK
 import React
+import AVFoundation
 
 /// Thread-safe singleton store for FaceTec SDK configuration and instance.
-/// Written once during `initialize()`, read by the button component.
+/// Written once during `initialize()`, read by `startLivenessCheck()`.
 /// All property access is synchronized via an internal lock.
 class FaceTecConfigStore {
     private let lock = NSLock()
@@ -15,6 +16,7 @@ class FaceTecConfigStore {
     private var _isInitialized: Bool = false
     private var _isInitializing: Bool = false
     private var _initProcessor: SessionRequestProcessor?
+    private var _initError: String?
 
     var deviceKeyIdentifier: String {
         get { lock.lock(); defer { lock.unlock() }; return _deviceKeyIdentifier }
@@ -50,18 +52,31 @@ class FaceTecConfigStore {
         get { lock.lock(); defer { lock.unlock() }; return _initProcessor }
         set { lock.lock(); defer { lock.unlock() }; _initProcessor = newValue }
     }
+
+    var initError: String? {
+        get { lock.lock(); defer { lock.unlock() }; return _initError }
+        set { lock.lock(); defer { lock.unlock() }; _initError = newValue }
+    }
 }
 
 @objc(FaceTecLivenessModule)
 class FaceTecModule: NSObject {
 
-    /// Shared config store — the button reads from here
+    /// Shared config store
     static let shared = FaceTecConfigStore()
+
+    // Session tracking
+    private var activeProcessor: SessionRequestProcessor?
+    private var faceTecViewController: UIViewController?
+    private var livenessContainerView: UIView?
+    private var isSessionActive = false
 
     @objc
     static func requiresMainQueueSetup() -> Bool {
         return false
     }
+
+    // MARK: - initialize
 
     /// Called from JS: FaceTec.initialize({ deviceKeyIdentifier, apiEndpoint?, headers? })
     @objc
@@ -99,10 +114,49 @@ class FaceTecModule: NSObject {
         let headers = config["headers"] as? [String: String] ?? [:]
 
         store.isInitializing = true
+        store.initError = nil
         store.deviceKeyIdentifier = deviceKeyIdentifier
         store.apiEndpoint = apiEndpoint
         store.headers = headers
 
+        // Request camera permission before initializing the SDK
+        let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+
+        switch cameraStatus {
+        case .authorized:
+            Self.performSDKInitialization(store: store, deviceKeyIdentifier: deviceKeyIdentifier, apiEndpoint: apiEndpoint, headers: headers, resolve: resolve, reject: reject)
+
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                if granted {
+                    Self.performSDKInitialization(store: store, deviceKeyIdentifier: deviceKeyIdentifier, apiEndpoint: apiEndpoint, headers: headers, resolve: resolve, reject: reject)
+                } else {
+                    store.isInitializing = false
+                    store.initError = "Camera permission denied"
+                    reject("permission_denied", "Camera permission denied", nil)
+                }
+            }
+
+        case .denied, .restricted:
+            store.isInitializing = false
+            store.initError = "Camera permission denied"
+            reject("permission_denied", "Camera permission denied", nil)
+
+        @unknown default:
+            store.isInitializing = false
+            store.initError = "Camera permission denied"
+            reject("permission_denied", "Camera permission denied", nil)
+        }
+    }
+
+    private static func performSDKInitialization(
+        store: FaceTecConfigStore,
+        deviceKeyIdentifier: String,
+        apiEndpoint: String,
+        headers: [String: String],
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
         // FaceTec SDK must be initialized from the main thread.
         DispatchQueue.main.async {
             let processor = SessionRequestProcessor(
@@ -123,6 +177,229 @@ class FaceTecModule: NSObject {
                 )
             )
         }
+    }
+
+    // MARK: - isInitialized
+
+    @objc
+    func isInitialized(_ resolve: @escaping RCTPromiseResolveBlock,
+                       rejecter reject: @escaping RCTPromiseRejectBlock) {
+        resolve(FaceTecModule.shared.isInitialized)
+    }
+
+    // MARK: - getInitializationStatus
+
+    @objc
+    func getInitializationStatus(_ resolve: @escaping RCTPromiseResolveBlock,
+                                 rejecter reject: @escaping RCTPromiseRejectBlock) {
+        let store = FaceTecModule.shared
+        var result: [String: Any] = [:]
+
+        if store.isInitialized {
+            result["status"] = "initialized"
+        } else if store.isInitializing {
+            result["status"] = "initializing"
+        } else if let error = store.initError {
+            result["status"] = "error"
+            result["error"] = error
+        } else {
+            result["status"] = "idle"
+        }
+
+        resolve(result)
+    }
+
+    // MARK: - getSDKVersion
+
+    @objc
+    func getSDKVersion(_ resolve: @escaping RCTPromiseResolveBlock,
+                       rejecter reject: @escaping RCTPromiseRejectBlock) {
+        resolve(FaceTec.sdk.version)
+    }
+
+    // MARK: - startLivenessCheck
+
+    /// Called from JS: FaceTec.startLivenessCheck(customization?)
+    /// Checks camera permission, applies customization, launches FaceTec session.
+    @objc
+    func startLivenessCheck(_ customization: NSDictionary,
+                            resolver resolve: @escaping RCTPromiseResolveBlock,
+                            rejecter reject: @escaping RCTPromiseRejectBlock) {
+
+        let store = FaceTecModule.shared
+
+        guard store.isInitialized, let sdkInstance = store.sdkInstance else {
+            reject("init_error", "FaceTec SDK is not initialized", nil)
+            return
+        }
+
+        guard !isSessionActive else {
+            reject("internal_error", "A liveness session is already in progress", nil)
+            return
+        }
+
+        isSessionActive = true
+        launchSession(customization: customization, sdkInstance: sdkInstance, resolve: resolve, reject: reject)
+    }
+
+    // MARK: - Session Launch
+
+    private func launchSession(customization: NSDictionary,
+                               sdkInstance: FaceTecSDKInstance,
+                               resolve: @escaping RCTPromiseResolveBlock,
+                               reject: @escaping RCTPromiseRejectBlock) {
+        DispatchQueue.main.async { [self] in
+            // Apply customization
+            if let dict = customization as? [String: Any], !dict.isEmpty {
+                FaceTecCustomizationBuilder.apply(from: dict)
+                FaceTecCustomizationBuilder.applyDynamicStrings(from: dict)
+            } else {
+                FaceTecCustomizationBuilder.applyDefaults()
+            }
+
+            // Find topmost view controller
+            guard let topVC = Self.findTopViewController() else {
+                isSessionActive = false
+                reject("internal_error", "No root view controller found", nil)
+                return
+            }
+
+            // Create container view
+            let container = UIView()
+            container.translatesAutoresizingMaskIntoConstraints = false
+            container.backgroundColor = .black
+            livenessContainerView = container
+
+            topVC.view.addSubview(container)
+            NSLayoutConstraint.activate([
+                container.leadingAnchor.constraint(equalTo: topVC.view.leadingAnchor),
+                container.trailingAnchor.constraint(equalTo: topVC.view.trailingAnchor),
+                container.topAnchor.constraint(equalTo: topVC.view.topAnchor),
+                container.bottomAnchor.constraint(equalTo: topVC.view.bottomAnchor)
+            ])
+
+            // Cancel any previous in-flight requests
+            activeProcessor?.cancel()
+
+            // Create processor
+            let store = FaceTecModule.shared
+            let processor = SessionRequestProcessor(
+                deviceKeyIdentifier: store.deviceKeyIdentifier,
+                apiEndpoint: store.apiEndpoint,
+                customHeaders: store.headers
+            )
+            activeProcessor = processor
+
+            processor.onComplete = { [weak self, weak topVC, weak container] result, serverResponse in
+                DispatchQueue.main.async {
+                    guard let self = self else {
+                        container?.removeFromSuperview()
+                        return
+                    }
+
+                    // Cleanup UI
+                    self.cleanupSession(parentVC: topVC)
+
+                    // Reset session flag
+                    self.isSessionActive = false
+                    self.activeProcessor = nil
+
+                    // Handle result
+                    if let serverResponse = serverResponse {
+                        let response = self.buildResponse(from: serverResponse)
+                        resolve(response)
+                    } else {
+                        let status = result.sessionStatus
+                        let statusString = String(describing: status)
+
+                        if statusString.lowercased().contains("cancelled") || statusString.lowercased().contains("canceled") {
+                            reject("session_cancelled", "User cancelled the session", nil)
+                        } else if statusString.lowercased().contains("timeout") {
+                            reject("network_error", "Session timed out", nil)
+                        } else {
+                            reject("network_error", "Session ended without server response: \(statusString)", nil)
+                        }
+                    }
+                }
+            }
+
+            // Start FaceTec session
+            let faceTecVC = sdkInstance.start3DLiveness(with: processor)
+            faceTecViewController = faceTecVC
+
+            topVC.addChild(faceTecVC)
+            container.addSubview(faceTecVC.view)
+            faceTecVC.view.frame = container.bounds
+            faceTecVC.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            faceTecVC.didMove(toParent: topVC)
+        }
+    }
+
+    // MARK: - Cleanup
+
+    private func cleanupSession(parentVC: UIViewController?) {
+        if let faceTecVC = faceTecViewController {
+            faceTecVC.willMove(toParent: nil)
+            faceTecVC.view.removeFromSuperview()
+            faceTecVC.removeFromParent()
+            faceTecViewController = nil
+        }
+
+        livenessContainerView?.removeFromSuperview()
+        livenessContainerView = nil
+    }
+
+    // MARK: - Response Builder
+
+    private func buildResponse(from serverResponse: FaceTecServerResponse) -> [String: Any] {
+        var response: [String: Any] = [:]
+
+        response["success"] = serverResponse.success
+        response["didError"] = serverResponse.didError
+        response["responseBlob"] = serverResponse.responseBlob
+
+        if let rawResult = serverResponse.rawData["result"] as? [String: Any] {
+            var result: [String: Any] = [:]
+            if let livenessProvenInt = rawResult["livenessProven"] as? Int {
+                result["livenessProven"] = livenessProvenInt == 1
+            } else if let livenessProvenBool = rawResult["livenessProven"] as? Bool {
+                result["livenessProven"] = livenessProvenBool
+            }
+            if let ageGroup = rawResult["ageV2GroupEnumInt"] as? Int {
+                result["ageV2GroupEnumInt"] = ageGroup
+            }
+            if !result.isEmpty {
+                response["result"] = result
+            }
+        }
+
+        for key in ["serverInfo", "additionalSessionData", "httpCallInfo"] {
+            if let data = serverResponse.rawData[key] as? [String: Any] {
+                response[key] = data
+            }
+        }
+
+        return response
+    }
+
+    // MARK: - Helpers
+
+    private static func findTopViewController() -> UIViewController? {
+        let keyWindow: UIWindow?
+        if #available(iOS 13.0, *) {
+            keyWindow = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .first { $0.isKeyWindow }
+        } else {
+            keyWindow = UIApplication.shared.keyWindow
+        }
+
+        guard var topVC = keyWindow?.rootViewController else { return nil }
+        while let presented = topVC.presentedViewController {
+            topVC = presented
+        }
+        return topVC
     }
 }
 
@@ -151,11 +428,13 @@ private class InitializeCallbackHandler: NSObject, FaceTecInitializeCallback {
     }
 
     func onFaceTecSDKInitializeError(error: FaceTecInitializationError) {
+        let errorMessage = String(describing: error)
         store.isInitialized = false
         store.isInitializing = false
+        store.initError = errorMessage
         store.sdkInstance = nil
         store.initProcessor = nil
-        reject("INIT_ERROR", String(describing: error), nil)
+        reject("INIT_ERROR", errorMessage, nil)
     }
 }
 
@@ -318,6 +597,7 @@ class FaceTecCustomizationBuilder {
             if let ff = styles["fontFamily"] as? String, !ff.isEmpty {
                 base.feedbackCustomization.textFont = UIFont(name: ff, size: 16) ?? UIFont.systemFont(ofSize: 16)
             }
+            base.feedbackCustomization.shadow = nil
         }
 
         // -- Result Screen Message --
@@ -343,6 +623,16 @@ class FaceTecCustomizationBuilder {
         if let v = dict[key] as? Double { return Int(v) }
         return nil
     }
+
+    /// Map of JS resultScreenTexts keys to FaceTec string resource keys.
+    private static let resultScreenKeyMap: [String: String] = [
+        "uploadMessage": "FaceTec_result_facescan_upload_message",
+        "uploadMessageStillUploading": "FaceTec_result_facescan_upload_message_still_uploading",
+        "successMessage": "FaceTec_result_facescan_success_3d_liveness_prior_to_idscan_message",
+        "successEnrollmentMessage": "FaceTec_result_facescan_success_3d_enrollment_message",
+        "successReverificationMessage": "FaceTec_result_facescan_success_3d_3d_reverification_message",
+        "successLivenessAndIdMessage": "FaceTec_result_facescan_success_3d_liveness_and_official_id_photo_message",
+    ]
 
     /// Map of JS feedbackTexts keys to FaceTec string resource keys.
     private static let feedbackKeyMap: [String: String] = [
@@ -374,6 +664,14 @@ class FaceTecCustomizationBuilder {
         if let feedbackTexts = dict["feedbackTexts"] as? [String: Any] {
             for (jsKey, nativeKey) in feedbackKeyMap {
                 if let text = feedbackTexts[jsKey] as? String {
+                    strings[nativeKey] = text
+                }
+            }
+        }
+
+        if let resultScreenTexts = dict["resultScreenTexts"] as? [String: Any] {
+            for (jsKey, nativeKey) in resultScreenKeyMap {
+                if let text = resultScreenTexts[jsKey] as? String {
                     strings[nativeKey] = text
                 }
             }

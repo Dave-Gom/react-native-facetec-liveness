@@ -1,6 +1,6 @@
 # react-native-facetec
 
-React Native component for FaceTec 3D Liveness verification.
+React Native module for FaceTec 3D Liveness verification.
 
 ## Installation (Local Module)
 
@@ -170,66 +170,100 @@ These are already included in the module, but ensure your app has:
 
 ## Usage
 
-The module has two parts: **initialization** (once at app startup) and the **button component** (in your screen).
+The module provides two ways to start a liveness check:
+
+1. **`Facetec3DLivenessTestButton`** — A drop-in React Native button that manages SDK state and launches the session on press
+2. **`FaceTec.startLivenessCheck()`** — A function you can call from your own button or UI
+
+Both require calling `FaceTec.initialize()` once at app startup.
 
 ### 1. Initialize the SDK
 
-Call `FaceTec.initialize()` once, typically in a top-level `useEffect`:
-
 ```typescript
-import { FaceTec } from "react-native-facetec";
+import { FaceTec } from 'react-native-facetec';
 
 useEffect(() => {
   FaceTec.initialize({
-    deviceKeyIdentifier: "your-device-key",
-    apiEndpoint: "https://your-api.com/facetec/process-request",
-    headers: { Authorization: "Bearer token" }, // optional
+    deviceKeyIdentifier: 'your-device-key',
+    apiEndpoint: 'https://your-api.com/facetec/process-request',
+    headers: { Authorization: 'Bearer token' }, // optional
   });
 }, []);
 ```
 
-The button component will stay in "initializing" state until the SDK is ready, so initialization and mounting order doesn't matter.
+### 2a. Using the button component
 
-### 2. Mount the button
+The button automatically tracks SDK initialization state and launches the liveness session on press:
 
 ```tsx
-import { Facetec3DLivenessTestButton } from "react-native-facetec";
+import { Facetec3DLivenessTestButton } from 'react-native-facetec';
 
 <Facetec3DLivenessTestButton
   onResponse={(response) => {
     if (response.success && response.result?.livenessProven) {
-      console.log("Liveness verified!");
+      console.log('Liveness verified!');
     }
   }}
-  onError={(error) => {
-    console.log("Error:", error.errorType, error.message);
+  onError={(error) => console.log('Error:', error.errorType)}
+  customization={{
+    frameColor: '#ffffff',
+    readyScreenHeaderText: 'Place your face in the frame',
+    actionButtonText: 'I AM READY',
   }}
-  style={{ width: 250, height: 50, backgroundColor: "#007AFF" }}
-  errorStyle={{ backgroundColor: "#FF3B30" }}
-  initializingStyle={{ backgroundColor: "#808080" }}
+  readyText="Verify Identity"
+  readyStyle={{ backgroundColor: '#007AFF' }}
+  readyTextStyle={{ fontSize: 16, fontWeight: 'bold', color: '#fff' }}
+  initializingText="Loading..."
+  initializingStyle={{ backgroundColor: '#808080' }}
+  errorText="Error"
+  errorStyle={{ backgroundColor: '#FF3B30' }}
+  style={{ width: 280, height: 50, borderRadius: 25 }}
 />;
+```
+
+### 2b. Using the function directly
+
+Call `FaceTec.startLivenessCheck()` from your own button or trigger:
+
+```tsx
+import { FaceTec } from 'react-native-facetec';
+
+const handleVerify = async () => {
+  try {
+    const response = await FaceTec.startLivenessCheck({
+      frameColor: '#ffffff',
+      readyScreenHeaderText: 'Place your face in the frame',
+    });
+    if (response.success && response.result?.livenessProven) {
+      console.log('Liveness verified!');
+    }
+  } catch (error) {
+    console.log('Error:', error.code, error.message);
+  }
+};
+
+<TouchableOpacity onPress={handleVerify}>
+  <Text>Verify Identity</Text>
+</TouchableOpacity>;
 ```
 
 ### 3. Full example with customization
 
 ```tsx
-import React, { useEffect } from "react";
-import { View } from "react-native";
-import { useTranslation } from "react-i18next";
-import { FaceTec, Facetec3DLivenessTestButton } from "react-native-facetec";
+import React, { useEffect } from 'react';
+import { View } from 'react-native';
+import { FaceTec, Facetec3DLivenessTestButton } from 'react-native-facetec';
 
 const LivenessScreen = () => {
-  const { t } = useTranslation();
-
   useEffect(() => {
     FaceTec.initialize({
-      deviceKeyIdentifier: "your-device-key",
-      apiEndpoint: "https://your-api.com/facetec/process-request",
+      deviceKeyIdentifier: 'your-device-key',
+      apiEndpoint: 'https://your-api.com/facetec/process-request',
     });
   }, []);
 
   return (
-    <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
       <Facetec3DLivenessTestButton
         onResponse={(response) => {
           if (response.success && response.result?.livenessProven) {
@@ -237,74 +271,64 @@ const LivenessScreen = () => {
           }
         }}
         onError={(error) => console.log(error.errorType)}
-        style={{ width: 280, height: 50, backgroundColor: "#0066CC" }}
-        readyText={t("facetec.startButton")}
-        initializingText={t("facetec.initializing")}
-        errorText={t("facetec.error")}
-        permissionDeniedText={t("facetec.permissionDenied")}
+        style={{ width: 280, height: 50 }}
+        readyText="Verify Identity"
+        readyStyle={{ backgroundColor: '#0066CC', borderRadius: 25 }}
+        readyTextStyle={{ color: '#fff', fontWeight: 'bold' }}
+        initializingText="Loading..."
+        initializingStyle={{ backgroundColor: '#808080', borderRadius: 25 }}
+        initializingTextStyle={{ color: '#fff' }}
+        errorText="Error"
+        errorStyle={{ backgroundColor: '#FF3B30', borderRadius: 25 }}
+        errorTextStyle={{ color: '#fff' }}
         customization={{
           // Frame & Overlay
-          frameColor: "#ffffff",
-          borderColor: "#ffffff",
-          outerBackgroundColor: "#000000",
+          frameColor: '#ffffff',
+          borderColor: '#ffffff',
+          outerBackgroundColor: '#000000',
 
           // Oval
-          ovalColor: "#519dbd",
-          dualSpinnerColor: "#519dbd",
+          ovalColor: '#519dbd',
+          dualSpinnerColor: '#519dbd',
 
-          // Ready Screen Header
-          readyScreenHeaderText: t("facetec.readyHeader"),
+          // Ready Screen
+          readyScreenHeaderText: 'Place your face\nin the frame',
           readyScreenHeaderStyles: {
-            color: "#1a2332",
-            fontFamily: "Montserrat-Bold",
+            color: '#1a2332',
+            fontFamily: 'Montserrat-Bold',
           },
+          readyScreenSubtext: ' ',
 
-          // Ready Screen Subtext (empty string hides it)
-          readyScreenSubtext: "",
-
-          // Action Button ("I'M READY")
-          actionButtonText: t("facetec.imReady"),
+          // Action Button
+          actionButtonText: 'I AM READY',
           actionButtonStyles: {
-            backgroundColor: "#0066CC",
-            textColor: "#ffffff",
-            highlightBackgroundColor: "#004499",
-            disabledBackgroundColor: "#99ccff",
+            backgroundColor: '#0066CC',
+            textColor: '#ffffff',
+            highlightBackgroundColor: '#004499',
+            disabledBackgroundColor: '#99ccff',
             cornerRadius: 30,
-            fontFamily: "Montserrat-SemiBold",
-          },
-
-          // Retry Screen
-          retryScreenHeaderText: t("facetec.retryHeader"),
-          retryScreenHeaderStyles: {
-            color: "#1a2332",
-            fontFamily: "Montserrat-Bold",
-          },
-          retryScreenSubtext: t("facetec.retrySubtext"),
-          retryScreenSubtextStyles: {
-            color: "#666666",
-            fontFamily: "Montserrat-Regular",
+            fontFamily: 'Montserrat-SemiBold',
           },
 
           // Feedback Bar
           feedbackBarStyles: {
-            backgroundColor: "#000000b0",
-            textColor: "#ffffff",
+            backgroundColor: '#000000b0',
+            textColor: '#ffffff',
             cornerRadius: 16,
-            fontFamily: "Montserrat-Medium",
+            fontFamily: 'Montserrat-SemiBold',
           },
 
           // Feedback Texts (all optional)
           feedbackTexts: {
-            moveCloser: t("facetec.feedback.moveCloser"),
-            holdSteady: t("facetec.feedback.holdSteady"),
-            centerFace: t("facetec.feedback.centerFace"),
-            presessionFrameYourFace: t("facetec.feedback.frameYourFace"),
+            moveCloser: 'Move closer',
+            holdSteady: 'Hold steady',
+            centerFace: 'Center your face',
           },
 
           // Result Screen
           resultMessageStyles: {
-            color: "#1a2332",
-            fontFamily: "Montserrat-Regular",
+            color: '#1a2332',
+            fontFamily: 'Montserrat-Regular',
           },
         }}
       />
@@ -340,29 +364,47 @@ Returns `Promise<boolean>` — useful for retry logic.
 
 Returns `Promise<string>` with the SDK version.
 
+### `FaceTec.startLivenessCheck(customization?)`
+
+Starts a liveness session. Checks camera permission, applies customization, and launches the FaceTec UI.
+
+- **Resolves** with `LivenessResponse` when the server responds (check `response.result?.livenessProven` for the result)
+- **Rejects** with `{ code: ErrorType, message: string }` on errors (permission denied, session cancelled, etc.)
+
+```typescript
+const response = await FaceTec.startLivenessCheck({
+  frameColor: '#ffffff',
+  readyScreenHeaderText: 'Place your face in the frame',
+});
+```
+
 ---
 
 ## Button Props
 
-| Prop                   | Type                                   | Required | Default                      | Description                                           |
-| ---------------------- | -------------------------------------- | -------- | ---------------------------- | ----------------------------------------------------- |
-| `onResponse`           | `(response: LivenessResponse) => void` | Yes      | —                            | Callback when liveness completes with server response |
-| `onError`              | `(error: ErrorEvent) => void`          | No       | —                            | Callback for errors without server response           |
-| `style`                | `ViewStyle`                            | No       | —                            | Base button styles                                    |
-| `errorStyle`           | `ViewStyle`                            | No       | —                            | Additional styles for error state                     |
-| `initializingStyle`    | `ViewStyle`                            | No       | —                            | Additional styles for initializing state              |
-| `initializingText`     | `string`                               | No       | `"Initializing"`             | Text while SDK initializes                            |
-| `readyText`            | `string`                               | No       | `"Start liveness check"`     | Text when ready                                       |
-| `errorText`            | `string`                               | No       | `"Initialization error"`     | Text on init error                                    |
-| `permissionDeniedText` | `string`                               | No       | `"Camera permission denied"` | Text when camera denied                               |
-| `onStateChange`        | `(state: ButtonState) => void`         | No       | —                            | Callback when button state changes                    |
-| `customization`        | `FaceTecCustomization`                 | No       | —                            | SDK UI customization (see below)                      |
+| Prop                  | Type                                   | Required | Default                  | Description                                    |
+| --------------------- | -------------------------------------- | -------- | ------------------------ | ---------------------------------------------- |
+| `onResponse`          | `(response: LivenessResponse) => void` | Yes      | —                        | Callback when liveness completes               |
+| `onError`             | `(error: ErrorEvent) => void`          | No       | —                        | Callback for errors                            |
+| `onStateChange`       | `(state: ButtonState) => void`         | No       | —                        | Callback when button state changes             |
+| `customization`       | `FaceTecCustomization`                 | No       | —                        | SDK UI customization (see below)               |
+| `style`               | `ViewStyle`                            | No       | —                        | Base button styles (always applied)            |
+| `readyText`           | `string`                               | No       | `"Start liveness check"` | Text when ready                                |
+| `readyStyle`          | `ViewStyle`                            | No       | —                        | Additional styles for ready state              |
+| `readyTextStyle`      | `TextStyle`                            | No       | —                        | Text styles for ready state                    |
+| `initializingText`    | `string`                               | No       | `"Initializing..."`      | Text while SDK initializes                     |
+| `initializingStyle`   | `ViewStyle`                            | No       | —                        | Additional styles for initializing state       |
+| `initializingTextStyle` | `TextStyle`                          | No       | —                        | Text styles for initializing state             |
+| `errorText`           | `string`                               | No       | `"Initialization error"` | Text on error                                  |
+| `errorStyle`          | `ViewStyle`                            | No       | —                        | Additional styles for error state              |
+| `errorTextStyle`      | `TextStyle`                            | No       | —                        | Text styles for error state                    |
+| `disabled`            | `boolean`                              | No       | `false`                  | Disable the button                             |
 
 ---
 
 ## Customization
 
-The `customization` prop controls all visual aspects of the FaceTec SDK UI, grouped by element. All fields are optional — omitted fields fall back to native Config defaults.
+The `customization` prop (on the button) or argument (to `startLivenessCheck`) controls all visual aspects of the FaceTec SDK UI. All fields are optional — omitted fields fall back to native Config defaults.
 
 ### Frame & Overlay
 
@@ -411,19 +453,14 @@ interface FaceTecButtonStyles {
 }
 ```
 
-### Retry Screen Header
+### Retry Screen
 
-| Property                  | Type                | Description                 |
-| ------------------------- | ------------------- | --------------------------- |
-| `retryScreenHeaderText`   | `string`            | Header text on retry screen |
-| `retryScreenHeaderStyles` | `FaceTecTextStyles` | `{ color?, fontFamily? }`   |
-
-### Retry Screen Subtext
-
-| Property                   | Type                | Description               |
-| -------------------------- | ------------------- | ------------------------- |
-| `retryScreenSubtext`       | `string`            | Subtext on retry screen   |
-| `retryScreenSubtextStyles` | `FaceTecTextStyles` | `{ color?, fontFamily? }` |
+| Property                   | Type                | Description                 |
+| -------------------------- | ------------------- | --------------------------- |
+| `retryScreenHeaderText`    | `string`            | Header text on retry screen |
+| `retryScreenHeaderStyles`  | `FaceTecTextStyles` | `{ color?, fontFamily? }`   |
+| `retryScreenSubtext`       | `string`            | Subtext on retry screen     |
+| `retryScreenSubtextStyles` | `FaceTecTextStyles` | `{ color?, fontFamily? }`   |
 
 ### Feedback Bar
 
@@ -448,21 +485,21 @@ interface FaceTecFeedbackBarStyles {
 
 ```typescript
 interface FaceTecFeedbackTexts {
-  moveCloser?: string; // "Move Closer"
-  moveAway?: string; // "Move Away"
-  centerFace?: string; // "Center Your Face"
-  faceNotFound?: string; // "Frame Your Face"
-  holdSteady?: string; // "Hold Steady"
-  faceNotUpright?: string; // "Hold Your Head Straight"
-  faceNotLookingStraight?: string; // "Look Straight Ahead"
-  useEvenLighting?: string; // "Light Face More Evenly"
-  moveToEyeLevel?: string; // "Move Camera To Eye Level"
-  presessionFrameYourFace?: string; // "Frame Your Face In The Oval"
-  presessionLookStraight?: string; // "Look Straight Ahead"
-  presessionNeutralExpression?: string; // "Neutral Expression, No Smiling"
-  presessionRemoveDarkGlasses?: string; // "Remove Dark Glasses"
-  presessionConditionsTooBright?: string; // "Conditions Too Bright"
-  presessionBrightenEnvironment?: string; // "Brighten Your Environment"
+  moveCloser?: string;
+  moveAway?: string;
+  centerFace?: string;
+  faceNotFound?: string;
+  holdSteady?: string;
+  faceNotUpright?: string;
+  faceNotLookingStraight?: string;
+  useEvenLighting?: string;
+  moveToEyeLevel?: string;
+  presessionFrameYourFace?: string;
+  presessionLookStraight?: string;
+  presessionNeutralExpression?: string;
+  presessionRemoveDarkGlasses?: string;
+  presessionConditionsTooBright?: string;
+  presessionBrightenEnvironment?: string;
 }
 ```
 
@@ -480,7 +517,7 @@ interface FaceTecFeedbackTexts {
 
 ---
 
-## Error Event
+## Error Types
 
 ```typescript
 interface ErrorEvent {
@@ -489,12 +526,12 @@ interface ErrorEvent {
 }
 
 type ErrorType =
-  | "permission_denied"
-  | "init_error"
-  | "device_not_supported"
-  | "session_cancelled"
-  | "network_error"
-  | "internal_error";
+  | 'permission_denied'
+  | 'init_error'
+  | 'device_not_supported'
+  | 'session_cancelled'
+  | 'network_error'
+  | 'internal_error';
 ```
 
 ---
@@ -536,22 +573,15 @@ interface LivenessResponse {
 
 ## Button States
 
-| State          | Text                                  | Enabled | Styles applied                |
-| -------------- | ------------------------------------- | ------- | ----------------------------- |
-| `initializing` | `initializingText`                    | No      | `style` + `initializingStyle` |
-| `ready`        | `readyText`                           | Yes     | `style`                       |
-| `error`        | `errorText` or `permissionDeniedText` | No      | `style` + `errorStyle`        |
+| State          | Text               | Enabled | Styles applied              |
+| -------------- | ------------------ | ------- | --------------------------- |
+| `initializing` | `initializingText` | No      | `style` + `initializingStyle` |
+| `ready`        | `readyText`        | Yes     | `style` + `readyStyle`      |
+| `error`        | `errorText`        | No      | `style` + `errorStyle`      |
 
 ---
 
 ## Troubleshooting
-
-### Error: "FaceTecLivenessButton was not found in UIManager"
-
-Ensure you have:
-
-1. Added the pod to Podfile and run `pod install`
-2. Rebuilt the app (not just hot reload)
 
 ### Error: "Native module FaceTecLivenessModule tried to override FaceTecLivenessModule"
 
@@ -599,19 +629,15 @@ your-react-native-project/
 │       │   └── Facetec3DLivenessTestButton.tsx
 │       ├── ios/
 │       │   └── FaceTecLiveness/
-│       │       ├── FaceTecModule.swift
-│       │       ├── FaceTecModule.m
-│       │       ├── FaceTecLivenessViewManager.swift
-│       │       ├── FaceTecLivenessViewManager.m
+│       │       ├── FaceTecModule.swift       ← Init + startLivenessCheck
+│       │       ├── FaceTecModule.m           ← ObjC bridge
 │       │       ├── Config.swift
 │       │       ├── SessionRequestProcessor.swift
-│       │       └── FaceTecServerResponse.swift
+│       │       └── SampleAppNetworkingRequest.swift
 │       ├── android/
 │       │   └── src/main/java/com/facetec/
-│       │       ├── FaceTecLivenessViewManager.java
+│       │       ├── FaceTecLivenessModule.java  ← Init + startLivenessCheck
 │       │       ├── FaceTecLivenessPackage.java
-│       │       ├── FaceTecLivenessModule.java
-│       │       ├── RNFaceTecLivenessButton.java
 │       │       ├── Config.java
 │       │       ├── SessionRequestProcessor.java
 │       │       └── FaceTecServerResponse.java
@@ -619,3 +645,5 @@ your-react-native-project/
 │       ├── react-native-facetec.podspec
 │       └── README.md
 ```
+
+---

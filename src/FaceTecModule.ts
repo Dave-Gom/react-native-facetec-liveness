@@ -2,6 +2,8 @@ import { NativeModules } from 'react-native';
 
 const { FaceTecLivenessModule } = NativeModules;
 
+// --- Style Interfaces ---
+
 /**
  * Styles for a text element (header, subtext, message).
  */
@@ -82,6 +84,25 @@ export interface FaceTecFeedbackTexts {
 }
 
 /**
+ * Customizable texts for the upload/processing result screen.
+ * All fields are optional — only override the ones you need.
+ */
+export interface FaceTecResultScreenTexts {
+  /** Message shown while uploading the 3D face scan */
+  uploadMessage?: string;
+  /** Message when upload is still in progress / slow connection */
+  uploadMessageStillUploading?: string;
+  /** Success message after 3D liveness check (prior to ID scan) */
+  successMessage?: string;
+  /** Success message for 3D enrollment */
+  successEnrollmentMessage?: string;
+  /** Success message for 3D reverification */
+  successReverificationMessage?: string;
+  /** Success message for 3D liveness + official ID photo */
+  successLivenessAndIdMessage?: string;
+}
+
+/**
  * FaceTec SDK UI customization grouped by element.
  * All color values are hex strings (e.g., "#ffffff", "#000000b0").
  * Any omitted field falls back to the native Config file default.
@@ -152,6 +173,11 @@ export interface FaceTecCustomization {
 
   /** Styles for the result screen message */
   resultMessageStyles?: FaceTecTextStyles;
+
+  // -- Result Screen Texts --
+
+  /** Override upload/processing texts shown on the result screen */
+  resultScreenTexts?: FaceTecResultScreenTexts;
 }
 
 /**
@@ -164,6 +190,122 @@ export interface FaceTecInitConfig {
   apiEndpoint?: string;
   /** Custom headers to include in FaceTec API requests */
   headers?: Record<string, string>;
+}
+
+// --- Initialization Status ---
+
+/**
+ * Status of the FaceTec SDK initialization process.
+ */
+export type InitializationStatusValue = 'idle' | 'initializing' | 'initialized' | 'error';
+
+/**
+ * Result from getInitializationStatus().
+ * When status is 'error', the error field contains the failure reason.
+ */
+export interface InitializationStatus {
+  status: InitializationStatusValue;
+  error?: string;
+}
+
+// --- Response Types ---
+
+/**
+ * Resultado del liveness del servidor
+ */
+export interface LivenessResult {
+  /** Grupo de edad estimado */
+  ageV2GroupEnumInt?: number;
+  /** Indica si el liveness fue probado */
+  livenessProven?: boolean;
+}
+
+/**
+ * Información del servidor FaceTec
+ */
+export interface ServerInfo {
+  /** Versión del SDK del servidor */
+  coreServerSDKVersion?: string;
+  /** Modo del servidor (Development Only, Production, etc.) */
+  mode?: string;
+  /** Aviso de seguridad */
+  notice?: string;
+}
+
+/**
+ * Datos adicionales de la sesión
+ */
+export interface AdditionalSessionData {
+  /** ID de la aplicación */
+  appID?: string;
+  /** Modelo del dispositivo */
+  deviceModel?: string;
+  /** Versión del SDK del dispositivo */
+  deviceSDKVersion?: string;
+  /** ID de instalación */
+  installationID?: string;
+  /** Plataforma (ios, android) */
+  platform?: string;
+}
+
+/**
+ * Información de la llamada HTTP
+ */
+export interface HttpCallInfo {
+  /** Fecha de la llamada */
+  date?: string;
+  /** Epoch en segundos */
+  epochSecond?: number;
+  /** Path de la llamada */
+  path?: string;
+  /** Método HTTP */
+  requestMethod?: string;
+  /** ID de transacción */
+  tid?: string;
+}
+
+/**
+ * Respuesta del proceso de liveness - Contiene los datos directos del servidor FaceTec
+ * Los campos con valores 1/0 son convertidos a booleanos
+ */
+export interface LivenessResponse {
+  /** Indica éxito general del servidor */
+  success?: boolean;
+  /** Indica si hubo error en el servidor */
+  didError?: boolean;
+  /** Blob de respuesta encriptado */
+  responseBlob?: string;
+  /** Resultado del liveness */
+  result?: LivenessResult;
+  /** Información del servidor */
+  serverInfo?: ServerInfo;
+  /** Datos adicionales de la sesión */
+  additionalSessionData?: AdditionalSessionData;
+  /** Información de la llamada HTTP */
+  httpCallInfo?: HttpCallInfo;
+}
+
+// --- Error Types ---
+
+/**
+ * Tipos de error para el callback onError
+ */
+export type ErrorType =
+  | 'permission_denied'
+  | 'init_error'
+  | 'device_not_supported'
+  | 'session_cancelled'
+  | 'network_error'
+  | 'internal_error';
+
+/**
+ * Evento de error emitido cuando ocurre un error sin respuesta del servidor
+ */
+export interface ErrorEvent {
+  /** Tipo de error */
+  errorType: ErrorType;
+  /** Mensaje descriptivo del error */
+  message: string;
 }
 
 /**
@@ -179,25 +321,31 @@ export enum FaceTecErrorType {
   INTERNAL_ERROR = 'internal_error',
 }
 
+// --- Module API ---
+
 /**
- * FaceTec SDK module - handles initialization and configuration
+ * FaceTec SDK module - handles initialization, configuration, and liveness sessions.
  *
- * Call `FaceTec.initialize()` once before mounting `Facetec3DLivenessTestButton`.
- * The button will stay in "initializing" state until the SDK is ready,
- * so you can mount the button and call initialize() in any order.
+ * Call `FaceTec.initialize()` once at app startup.
+ * Then use `FaceTec.startLivenessCheck()` to launch a liveness session,
+ * or mount `Facetec3DLivenessTestButton` which calls it internally.
  *
  * @example
  * ```typescript
- * import { FaceTec, FaceTecErrorType } from 'react-native-facetec';
+ * import { FaceTec } from 'react-native-facetec';
  *
+ * // Initialize once
  * await FaceTec.initialize({
  *   deviceKeyIdentifier: 'your-device-key',
  *   apiEndpoint: 'https://your-api.com/facetec',
  *   headers: { 'Authorization': 'Bearer token' },
  * });
  *
- * // Check initialization state (e.g., for retry logic)
- * const ready = await FaceTec.isInitialized();
+ * // Start liveness check
+ * const response = await FaceTec.startLivenessCheck({
+ *   frameColor: '#ffffff',
+ *   readyScreenHeaderText: 'Place your face in the frame',
+ * });
  * ```
  */
 export const FaceTec = {
@@ -232,11 +380,36 @@ export const FaceTec = {
   },
 
   /**
+   * Get the current initialization status of the FaceTec SDK.
+   * Unlike `isInitialized()` which only returns a boolean, this method
+   * returns the full status including error information when initialization fails.
+   *
+   * @returns Promise with status ('idle' | 'initializing' | 'initialized' | 'error') and optional error message
+   */
+  async getInitializationStatus(): Promise<InitializationStatus> {
+    return FaceTecLivenessModule.getInitializationStatus();
+  },
+
+  /**
    * Get the FaceTec SDK version string.
    *
    * @returns Promise that resolves to the version string
    */
   async getSDKVersion(): Promise<string> {
     return FaceTecLivenessModule.getSDKVersion();
+  },
+
+  /**
+   * Start a 3D liveness check session.
+   * Checks camera permission, applies customization, and launches the FaceTec UI.
+   *
+   * @param customization - Optional UI customization for the session
+   * @returns Promise that resolves with the server response on success
+   * @throws Rejects with error code and message on failure (permission denied, cancelled, etc.)
+   */
+  async startLivenessCheck(
+    customization?: FaceTecCustomization,
+  ): Promise<LivenessResponse> {
+    return FaceTecLivenessModule.startLivenessCheck(customization ?? {});
   },
 };
