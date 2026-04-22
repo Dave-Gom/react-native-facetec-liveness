@@ -1,7 +1,6 @@
 import Foundation
 import FaceTecSDK
 import React
-import AVFoundation
 
 /// Thread-safe singleton store for FaceTec SDK configuration and instance.
 /// Written once during `initialize()`, read by `startLivenessCheck()`.
@@ -17,6 +16,8 @@ class FaceTecConfigStore {
     private var _isInitializing: Bool = false
     private var _initProcessor: SessionRequestProcessor?
     private var _initError: String?
+    private var _pendingInitReject: RCTPromiseRejectBlock?
+    private var _initGeneration: Int = 0
 
     var deviceKeyIdentifier: String {
         get { lock.lock(); defer { lock.unlock() }; return _deviceKeyIdentifier }
@@ -57,6 +58,16 @@ class FaceTecConfigStore {
         get { lock.lock(); defer { lock.unlock() }; return _initError }
         set { lock.lock(); defer { lock.unlock() }; _initError = newValue }
     }
+
+    var pendingInitReject: RCTPromiseRejectBlock? {
+        get { lock.lock(); defer { lock.unlock() }; return _pendingInitReject }
+        set { lock.lock(); defer { lock.unlock() }; _pendingInitReject = newValue }
+    }
+
+    var initGeneration: Int {
+        get { lock.lock(); defer { lock.unlock() }; return _initGeneration }
+        set { lock.lock(); defer { lock.unlock() }; _initGeneration = newValue }
+    }
 }
 
 @objc(FaceTecLivenessModule)
@@ -86,21 +97,17 @@ class FaceTecModule: NSObject {
 
         let store = FaceTecModule.shared
 
-        // Guard: already initialized
-        if store.isInitialized {
-            resolve(true)
-            return
-        }
-
-        // Guard: initialization already in progress
+        // Cancel previous initialization if one is in progress
         if store.isInitializing {
-            reject("INIT_ERROR", "Initialization already in progress", nil)
-            return
+            store.initProcessor?.cancel()
+            store.pendingInitReject?("init_cancelled", "Initialization cancelled by new request", nil)
+            store.pendingInitReject = nil
+            store.initProcessor = nil
         }
 
         guard let deviceKeyIdentifier = config["deviceKeyIdentifier"] as? String,
               !deviceKeyIdentifier.isEmpty else {
-            reject("INIT_ERROR", "deviceKeyIdentifier is required", nil)
+            reject("init_error", "deviceKeyIdentifier is required", nil)
             return
         }
 
@@ -113,40 +120,29 @@ class FaceTecModule: NSObject {
 
         let headers = config["headers"] as? [String: String] ?? [:]
 
+        // Reuse existing SDK instance if config hasn't changed
+        let configChanged = store.deviceKeyIdentifier != deviceKeyIdentifier
+            || store.apiEndpoint != apiEndpoint
+            || store.headers != headers
+
+        if store.isInitialized && !configChanged {
+            resolve(true)
+            return
+        }
+
+        // Reset previous state for fresh initialization
+        store.isInitialized = false
+        store.sdkInstance = nil
+        store.initProcessor = nil
         store.isInitializing = true
         store.initError = nil
+        store.initGeneration += 1
+        store.pendingInitReject = reject
         store.deviceKeyIdentifier = deviceKeyIdentifier
         store.apiEndpoint = apiEndpoint
         store.headers = headers
 
-        // Request camera permission before initializing the SDK
-        let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
-
-        switch cameraStatus {
-        case .authorized:
-            Self.performSDKInitialization(store: store, deviceKeyIdentifier: deviceKeyIdentifier, apiEndpoint: apiEndpoint, headers: headers, resolve: resolve, reject: reject)
-
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                if granted {
-                    Self.performSDKInitialization(store: store, deviceKeyIdentifier: deviceKeyIdentifier, apiEndpoint: apiEndpoint, headers: headers, resolve: resolve, reject: reject)
-                } else {
-                    store.isInitializing = false
-                    store.initError = "Camera permission denied"
-                    reject("permission_denied", "Camera permission denied", nil)
-                }
-            }
-
-        case .denied, .restricted:
-            store.isInitializing = false
-            store.initError = "Camera permission denied"
-            reject("permission_denied", "Camera permission denied", nil)
-
-        @unknown default:
-            store.isInitializing = false
-            store.initError = "Camera permission denied"
-            reject("permission_denied", "Camera permission denied", nil)
-        }
+        Self.performSDKInitialization(store: store, deviceKeyIdentifier: deviceKeyIdentifier, apiEndpoint: apiEndpoint, headers: headers, resolve: resolve, reject: reject)
     }
 
     private static func performSDKInitialization(
@@ -410,6 +406,7 @@ private class InitializeCallbackHandler: NSObject, FaceTecInitializeCallback {
     private let store: FaceTecConfigStore
     private let resolve: RCTPromiseResolveBlock
     private let reject: RCTPromiseRejectBlock
+    private let generation: Int
 
     init(store: FaceTecConfigStore,
          resolve: @escaping RCTPromiseResolveBlock,
@@ -417,24 +414,39 @@ private class InitializeCallbackHandler: NSObject, FaceTecInitializeCallback {
         self.store = store
         self.resolve = resolve
         self.reject = reject
+        self.generation = store.initGeneration
     }
 
     func onFaceTecSDKInitializeSuccess(sdkInstance: FaceTecSDKInstance) {
+        // Ignore callback if a newer initialization has been started
+        guard generation == store.initGeneration else { return }
         store.sdkInstance = sdkInstance
         store.isInitialized = true
         store.isInitializing = false
         store.initProcessor = nil
+        store.pendingInitReject = nil
         resolve(true)
     }
 
     func onFaceTecSDKInitializeError(error: FaceTecInitializationError) {
-        let errorMessage = String(describing: error)
+        // Ignore callback if a newer initialization has been started
+        guard generation == store.initGeneration else { return }
+        let errorMessage: String
+        switch error {
+        case .rejectedByServer:
+            errorMessage = "The server could not validate this application."
+        case .requestAborted:
+            errorMessage = "The initialization request was aborted due to a catastrophic error."
+        @unknown default:
+            errorMessage = "Unknown initialization error (rawValue: \(error.rawValue))"
+        }
         store.isInitialized = false
         store.isInitializing = false
         store.initError = errorMessage
         store.sdkInstance = nil
         store.initProcessor = nil
-        reject("INIT_ERROR", errorMessage, nil)
+        store.pendingInitReject = nil
+        reject("init_error", errorMessage, nil)
     }
 }
 

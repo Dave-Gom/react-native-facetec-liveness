@@ -83,7 +83,7 @@ class ProgressRequestBody extends RequestBody {
         @Override
         public void write(@NonNull byte[] b, int off, int len) throws IOException {
             this.stream.write(b, off, len);
-            this.bytesSent += Math.min(len, b.length);
+            this.bytesSent += len;
             listener.onUploadProgressChanged(this.bytesSent, this.totalBytes);
         }
 

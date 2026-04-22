@@ -113,7 +113,12 @@ class SampleAppNetworkingRequest: NSObject, URLSessionTaskDelegate {
             request.addValue(value, forHTTPHeaderField: key)
         }
 
-        request.httpBody = try! JSONSerialization.data(withJSONObject: sessionRequestCallPayload, options: JSONSerialization.WritingOptions(rawValue: 0))
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: sessionRequestCallPayload, options: JSONSerialization.WritingOptions(rawValue: 0))
+        } catch {
+            referencingProcessor.onCatastrophicNetworkError(sessionRequestCallback: sessionRequestCallback)
+            return
+        }
         
         // Set the total time that a request can take (in seconds)
         let sessionConfiguration = URLSessionConfiguration.default

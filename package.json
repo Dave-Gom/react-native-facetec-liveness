@@ -8,8 +8,17 @@
   "source": "src/index.ts",
   "author": "Dave Gomez",
   "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "peerDependencies": {
     "react": "*",
     "react-native": "*"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.6",
+    "react": "18.2.0",
+    "react-native": "0.73.11",
+    "typescript": "^5.0.0"
   }
 }

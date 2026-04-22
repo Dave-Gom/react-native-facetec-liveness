@@ -43,7 +43,11 @@ class SessionRequestProcessor: NSObject, FaceTecSessionRequestProcessor, URLSess
         // Pass the response and then clear to prevent memory leak
         let response = lastServerResponse
         lastServerResponse = nil  // Clear reference after use
-        activeNetworkingRequest = nil
+        // cancel() must be called from the main thread
+        DispatchQueue.main.async { [weak self] in
+            self?.activeNetworkingRequest?.cancel()
+            self?.activeNetworkingRequest = nil
+        }
         onComplete?(sessionResult, response)
     }
 

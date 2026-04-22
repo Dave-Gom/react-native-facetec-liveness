@@ -1,16 +1,13 @@
 package com.facetec;
 
-import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
 
 import com.facebook.react.bridge.ActivityEventListener;
 import com.facebook.react.bridge.Arguments;
@@ -22,8 +19,6 @@ import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.ReadableMapKeySetIterator;
 import com.facebook.react.bridge.WritableMap;
-import com.facebook.react.modules.core.PermissionAwareActivity;
-import com.facebook.react.modules.core.PermissionListener;
 import com.facebook.react.views.text.ReactFontManager;
 
 import com.facetec.sdk.FaceTecCustomization;
@@ -41,7 +36,6 @@ import java.util.Map;
 
 public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
     private static final String MODULE_NAME = "FaceTecLivenessModule";
-    private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
 
     private final ReactApplicationContext reactContext;
 
@@ -54,6 +48,8 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
     private static volatile boolean sIsInitializing = false;
     private static volatile String sInitError = null;
     private static volatile SessionRequestProcessor sInitProcessor = null;
+    private static volatile Promise sPendingInitPromise = null;
+    private static volatile int sInitGeneration = 0;
 
     // Session tracking
     private volatile Promise mPendingPromise = null;
@@ -87,19 +83,21 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void initialize(ReadableMap config, Promise promise) {
-        if (sIsInitialized) {
-            promise.resolve(true);
-            return;
-        }
-
+        // Cancel previous initialization if one is in progress
         if (sIsInitializing) {
-            promise.reject("INIT_ERROR", "Initialization already in progress");
-            return;
+            if (sInitProcessor != null) {
+                sInitProcessor.cancel();
+                sInitProcessor = null;
+            }
+            if (sPendingInitPromise != null) {
+                sPendingInitPromise.reject("init_cancelled", "Initialization cancelled by new request");
+                sPendingInitPromise = null;
+            }
         }
 
         String deviceKeyIdentifier = config.hasKey("deviceKeyIdentifier") ? config.getString("deviceKeyIdentifier") : "";
         if (deviceKeyIdentifier == null || deviceKeyIdentifier.isEmpty()) {
-            promise.reject("INIT_ERROR", "deviceKeyIdentifier is required");
+            promise.reject("init_error", "deviceKeyIdentifier is required");
             return;
         }
 
@@ -123,56 +121,33 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
             }
         }
 
+        // Reuse existing SDK instance if config hasn't changed
+        boolean configChanged = !deviceKeyIdentifier.equals(sDeviceKeyIdentifier)
+                || !apiEndpoint.equals(sApiEndpoint)
+                || !headers.equals(sHeaders);
+
+        if (sIsInitialized && !configChanged) {
+            promise.resolve(true);
+            return;
+        }
+
+        // Reset previous state for fresh initialization
+        sIsInitialized = false;
+        sSdkInstance = null;
+        sInitProcessor = null;
         sIsInitializing = true;
         sInitError = null;
+        sInitGeneration++;
+        sPendingInitPromise = promise;
         sDeviceKeyIdentifier = deviceKeyIdentifier;
         sApiEndpoint = apiEndpoint;
         sHeaders = Collections.unmodifiableMap(headers);
 
-        final String finalDeviceKeyIdentifier = deviceKeyIdentifier;
-        final String finalApiEndpoint = apiEndpoint;
-        final Map<String, String> finalHeaders = sHeaders;
-
-        // Check camera permission before initializing
-        Activity activity = getCurrentActivity();
-        if (activity == null) {
-            sIsInitializing = false;
-            promise.reject("INIT_ERROR", "Activity not available");
-            return;
-        }
-
-        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA)
-                == PackageManager.PERMISSION_GRANTED) {
-            performSDKInitialization(finalDeviceKeyIdentifier, finalApiEndpoint, finalHeaders, promise);
-        } else if (activity instanceof PermissionAwareActivity) {
-            ((PermissionAwareActivity) activity).requestPermissions(
-                    new String[]{Manifest.permission.CAMERA},
-                    CAMERA_PERMISSION_REQUEST_CODE,
-                    new PermissionListener() {
-                        @Override
-                        public boolean onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-                            if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
-                                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                                    performSDKInitialization(finalDeviceKeyIdentifier, finalApiEndpoint, finalHeaders, promise);
-                                } else {
-                                    sIsInitializing = false;
-                                    sInitError = "Camera permission denied";
-                                    promise.reject("permission_denied", "Camera permission denied");
-                                }
-                                return true;
-                            }
-                            return false;
-                        }
-                    }
-            );
-        } else {
-            sIsInitializing = false;
-            sInitError = "Camera permission denied";
-            promise.reject("permission_denied", "Cannot request camera permission");
-        }
+        performSDKInitialization(deviceKeyIdentifier, apiEndpoint, sHeaders, promise);
     }
 
     private void performSDKInitialization(String deviceKeyIdentifier, String apiEndpoint, Map<String, String> headers, Promise promise) {
+        final int generation = sInitGeneration;
         try {
             SessionRequestProcessor initProcessor = new SessionRequestProcessor(deviceKeyIdentifier, apiEndpoint, headers);
             sInitProcessor = initProcessor;
@@ -184,31 +159,39 @@ public class FaceTecLivenessModule extends ReactContextBaseJavaModule {
                     new FaceTecSDK.InitializeCallback() {
                         @Override
                         public void onSuccess(@NonNull FaceTecSDKInstance sdkInstance) {
+                            // Ignore callback if a newer initialization has been started
+                            if (generation != sInitGeneration) return;
                             sSdkInstance = sdkInstance;
                             sIsInitialized = true;
                             sIsInitializing = false;
                             sInitProcessor = null;
+                            sPendingInitPromise = null;
                             promise.resolve(true);
                         }
 
                         @Override
                         public void onError(@NonNull FaceTecInitializationError error) {
+                            // Ignore callback if a newer initialization has been started
+                            if (generation != sInitGeneration) return;
                             sIsInitialized = false;
                             sIsInitializing = false;
                             sInitError = error.name();
                             sSdkInstance = null;
                             sInitProcessor = null;
-                            promise.reject("INIT_ERROR", error.name());
+                            sPendingInitPromise = null;
+                            promise.reject("init_error", error.name());
                         }
                     }
             );
         } catch (Exception e) {
+            if (generation != sInitGeneration) return;
             sIsInitialized = false;
             sIsInitializing = false;
             sInitError = e.getMessage();
             sSdkInstance = null;
             sInitProcessor = null;
-            promise.reject("INIT_ERROR", e.getMessage());
+            sPendingInitPromise = null;
+            promise.reject("init_error", e.getMessage());
         }
     }
 

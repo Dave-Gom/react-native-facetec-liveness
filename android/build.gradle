@@ -48,6 +48,7 @@ dependencies {
 
     // FaceTec SDK
     // Local AAR file (placed in <project-root>/android/libs/)
+    // Dev/prod mode is determined by the deviceKeyIdentifier, not the AAR.
     implementation(name: 'facetec-sdk-10.0.38', ext: 'aar')
 
     // Option 2: If FaceTec provides a Maven repository

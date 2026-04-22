@@ -111,9 +111,22 @@ public class SampleAppNetworkingRequest {
         // - This code should never call your server directly. It should contact middleware you have created that forwards requests to your server.
         //
 
-        Request.Builder requestBuilder = new Request.Builder()
+        if (apiEndpoint == null || apiEndpoint.isEmpty()) {
+            referencingProcessor.onCatastrophicNetworkError(sessionRequestCallback);
+            return null;
+        }
+
+        Request.Builder requestBuilder;
+        try {
+            requestBuilder = new Request.Builder()
                 .url(apiEndpoint)
-                .header("Content-Type", "application/json")
+                .header("Content-Type", "application/json");
+        } catch (IllegalArgumentException e) {
+            referencingProcessor.onCatastrophicNetworkError(sessionRequestCallback);
+            return null;
+        }
+
+        requestBuilder
 
                 // Developer Note: This is ONLY needed for calls to the FaceTec Testing API.
                 // You should remove this when using Your App connected to Your Webservice + FaceTec Server

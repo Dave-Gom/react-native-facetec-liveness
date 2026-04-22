@@ -293,10 +293,12 @@ export interface LivenessResponse {
 export type ErrorType =
   | 'permission_denied'
   | 'init_error'
+  | 'init_cancelled'
   | 'device_not_supported'
   | 'session_cancelled'
   | 'network_error'
-  | 'internal_error';
+  | 'internal_error'
+  | 'camera_permission';
 
 /**
  * Evento de error emitido cuando ocurre un error sin respuesta del servidor
@@ -314,7 +316,9 @@ export interface ErrorEvent {
  */
 export enum FaceTecErrorType {
   INIT_ERROR = 'init_error',
+  INIT_CANCELLED = 'init_cancelled',
   PERMISSION_DENIED = 'permission_denied',
+  CAMERA_PERMISSION = 'camera_permission',
   DEVICE_NOT_SUPPORTED = 'device_not_supported',
   SESSION_CANCELLED = 'session_cancelled',
   NETWORK_ERROR = 'network_error',
