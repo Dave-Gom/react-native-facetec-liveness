@@ -1,136 +1,41 @@
 # react-native-facetec
 
-React Native native module for FaceTec 3D Liveness verification.
+React Native native module for [FaceTec](https://facetec.com) 3D Liveness verification.
 
-Provides `FaceTec.initialize()` and `FaceTec.startLivenessCheck()` as Promise-based APIs. Camera permissions are **not** handled by the native module — they must be requested from JavaScript before calling these methods.
+Provides `FaceTec.initialize()` and `FaceTec.startLivenessCheck()` as Promise-based APIs with full TypeScript support and extensive UI customization.
 
-## Installation (Local Module)
+## Requirements
 
-### Step 1: Copy the module
+- React Native 0.60+
+- iOS 13.0+
+- Android minSdkVersion 21+
+- A [FaceTec account](https://dev.facetec.com/account) with valid Device Key Identifier
+- FaceTec SDK binaries (not included — see [FaceTec SDK Setup](#facetec-sdk-binaries))
 
-```text
-your-react-native-project/
-├── native_modules/
-│   └── react-native-facetec/   # Copy here
-├── android/
-├── ios/
-└── package.json
-```
-
-### Step 2: Add dependency to package.json
-
-```json
-{
-  "dependencies": {
-    "react-native-facetec": "file:./native_modules/react-native-facetec"
-  }
-}
-```
-
-### Step 3: Install dependencies
-
-**IMPORTANT:** Use `yarn install` (not `npm install`) to respect the existing lock file.
+## Installation
 
 ```bash
-yarn install
+npm install react-native-facetec
+# or
+yarn add react-native-facetec
 ```
 
----
-
-## FaceTec SDK Binaries
-
-The FaceTec SDK binary files are **not included in the repository** (listed in `.gitignore`). Download them from your [FaceTec account](https://dev.facetec.com/downloads).
-
-### Where to place the files
-
-```text
-your-react-native-project/
-├── android/
-│   └── libs/
-│       └── facetec-sdk-X.X.XX.aar              ← Android SDK (single AAR, dev/prod via device key)
-├── ios/
-│   ├── FaceTecSDKForDevelopment.xcframework/    ← iOS SDK (development + simulator)
-│   │   ├── Info.plist
-│   │   ├── ios-arm64/
-│   │   └── ios-arm64_x86_64-simulator/
-│   └── FaceTecSDK.xcframework/                  ← iOS SDK (production, device only)
-│       ├── Info.plist
-│       └── ios-arm64/
-├── native_modules/
-│   └── react-native-facetec/                    ← Module code (no binaries)
-└── ...
-```
-
-> **Note:** If the `android/libs/` directory doesn't exist, create it.
-
-> **iOS (Xcode):** After placing each `.xcframework` in `ios/`, add them to the **Frameworks** group in the Xcode project navigator. The Podfile `post_install` hook handles linking the correct one per build configuration.
-
-### Platform differences
-
-- **Android**: A single AAR is used for all environments. Dev vs production mode is determined by the `deviceKeyIdentifier` passed at initialization (via `FACETEC_DEVICE_KEY` env var).
-- **iOS**: FaceTec provides separate xcframeworks for development and production. The Podfile automatically selects the correct one per build configuration:
-
-| Build configuration | xcframework used |
-| ------------------- | ---------------- |
-| `Prod.Release` | `FaceTecSDK.xcframework` (production) |
-| All others (`Debug`, `QA.*`, `Next.*`, etc.) | `FaceTecSDKForDevelopment.xcframework` |
-| Simulator (any config) | Always `FaceTecSDKForDevelopment.xcframework` (production SDK has no simulator slice) |
-
-### Updating the SDK version
-
-1. Replace the `.aar` file in `android/libs/` with the new version
-2. Update the AAR filename in `native_modules/react-native-facetec/android/build.gradle`
-3. Replace both `.xcframework` directories in `ios/` with the new versions
-4. Run `cd ios && pod install`
-
----
-
-## iOS Setup
-
-### 1. Add pod to Podfile
-
-```ruby
-target 'YourApp' do
-  # ... other pods
-  pod 'react-native-facetec', :path => '../native_modules/react-native-facetec'
-end
-```
-
-### 2. Install pods
+### iOS
 
 ```bash
-cd ios && pod install && cd ..
+cd ios && pod install
 ```
 
-### 3. Add camera permission to Info.plist
+Add camera permission to your `Info.plist`:
 
 ```xml
 <key>NSCameraUsageDescription</key>
-<string>Necesitamos acceso a la cámara para validación facial</string>
+<string>Camera access is required for face verification</string>
 ```
 
----
+### Android
 
-## Android Setup
-
-### 1. Add module to settings.gradle
-
-```gradle
-include ':react-native-facetec'
-project(':react-native-facetec').projectDir = new File(rootProject.projectDir, '../native_modules/react-native-facetec/android')
-```
-
-### 2. Add dependency to app/build.gradle
-
-```gradle
-dependencies {
-    implementation project(':react-native-facetec')
-}
-```
-
-### 3. Add flatDir repository for FaceTec SDK AAR
-
-In `android/app/build.gradle`, add at the end:
+Add the FaceTec AAR flatDir repository to `android/app/build.gradle`:
 
 ```gradle
 repositories {
@@ -140,116 +45,74 @@ repositories {
 }
 ```
 
-### 4. Camera permissions (AndroidManifest.xml)
-
-Already included in the module manifest, but ensure your app has:
+Ensure your `AndroidManifest.xml` includes:
 
 ```xml
 <uses-permission android:name="android.permission.CAMERA" />
 <uses-permission android:name="android.permission.INTERNET" />
 ```
 
----
+## FaceTec SDK Binaries
 
-## Environment Variables
+The FaceTec SDK binaries are **not included** in this package due to licensing. Download them from your [FaceTec account](https://dev.facetec.com/downloads) and place them in your project:
 
-FaceTec credentials must be configured via environment variables (using `react-native-config`), **never hardcoded**:
-
-```bash
-# .env.dev / .env.qa / .env.production
-FACETEC_DEVICE_KEY=your-device-key-identifier
-FACETEC_API_ENDPOINT=https://your-api.com/facetec/process-request
+```text
+your-project/
+├── android/
+│   └── libs/
+│       └── facetec-sdk-X.X.XX.aar
+├── ios/
+│   ├── FaceTecSDKForDevelopment.xcframework/   # Development + simulator
+│   └── FaceTecSDK.xcframework/                 # Production (device only)
 ```
 
-Declare the types in `env.d.ts`:
+> **iOS (Xcode):** After placing the `.xcframework` directories in `ios/`, add them to the **Frameworks** group in Xcode. Use a Podfile `post_install` hook to select the correct framework per build configuration.
 
-```typescript
-declare module 'react-native-config' {
-  export interface NativeConfig {
-    FACETEC_DEVICE_KEY: string;
-    FACETEC_API_ENDPOINT: string;
-  }
-}
-```
-
----
+> **Android:** A single AAR works for all environments. Dev vs production mode is determined by the `deviceKeyIdentifier` passed during initialization.
 
 ## Usage
 
-The module exposes a `FaceTec` object with Promise-based methods. Camera permissions must be handled in JavaScript before calling `initialize()` or `startLivenessCheck()`.
-
-### Basic flow
+Camera permissions are **not** handled by this module — request them from JavaScript before calling any methods.
 
 ```typescript
 import { FaceTec } from 'react-native-facetec';
-import { Camera } from 'react-native-vision-camera';
-import Config from 'react-native-config';
+import { PermissionsAndroid, Platform } from 'react-native';
 
-const handleLivenessCheck = async () => {
-  // 1. Request camera permission (not handled by native module)
-  const permission = await Camera.requestCameraPermission();
-  if (permission !== 'granted') {
-    // Handle denied permission (navigate to settings screen, etc.)
-    return;
+async function requestCameraPermission(): Promise<boolean> {
+  if (Platform.OS === 'android') {
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.CAMERA
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
   }
+  // iOS: handled via Info.plist prompt on first camera access,
+  // or use a library like react-native-permissions
+  return true;
+}
 
-  // 2. Initialize the SDK (safe to call multiple times — reuses instance if config unchanged)
+async function handleLivenessCheck() {
+  // 1. Request camera permission
+  const hasPermission = await requestCameraPermission();
+  if (!hasPermission) return;
+
+  // 2. Initialize the SDK (reuses instance if config is unchanged)
   await FaceTec.initialize({
-    deviceKeyIdentifier: Config.FACETEC_DEVICE_KEY,
-    apiEndpoint: Config.FACETEC_API_ENDPOINT,
+    deviceKeyIdentifier: 'your-device-key',
+    apiEndpoint: 'https://your-api.com/facetec/process-request',
     headers: { Authorization: 'Bearer token' }, // optional
   });
 
   // 3. Start liveness check
   const response = await FaceTec.startLivenessCheck({
     frameColor: '#ffffff',
-    readyScreenHeaderText: 'Place your face in the frame',
     actionButtonText: 'I AM READY',
   });
 
   if (response.result?.livenessProven) {
     // Verification successful
   }
-};
+}
 ```
-
-### Using F3DLivenessButton (app atom)
-
-The project provides an `F3DLivenessButton` atom in `app/atoms/Facetec/` that wraps the full flow (permission request → initialize → liveness check):
-
-```tsx
-import { F3DLivenessButton } from '@atoms';
-
-<F3DLivenessButton
-  initConfig={{
-    deviceKeyIdentifier: Config.FACETEC_DEVICE_KEY,
-    apiEndpoint: Config.FACETEC_API_ENDPOINT,
-  }}
-  onResponse={(response) => {
-    if (response.result?.livenessProven) {
-      // Navigate to next screen
-    }
-  }}
-  onError={(error) => {
-    if (error.errorType === 'permission_denied') {
-      navigation.navigate('CameraPermission');
-    }
-  }}
-  customization={{
-    frameColor: '#ffffff',
-    actionButtonText: 'ESTOY LISTO',
-  }}>
-  Verify Identity
-</F3DLivenessButton>
-```
-
-The button handles:
-1. Requests camera permission via `Camera.requestCameraPermission()` (VisionCamera)
-2. Shows a loader while initializing and running the session
-3. Merges custom props with `defaultCustomization` from `constants.ts`
-4. Emits `permission_denied` to `onError` if camera access is denied
-
----
 
 ## API Reference
 
@@ -259,72 +122,74 @@ Initializes the FaceTec SDK. Safe to call multiple times — returns immediately
 
 ```typescript
 interface FaceTecInitConfig {
-  /** FaceTec Device Key Identifier (required) */
   deviceKeyIdentifier: string;
-  /** API endpoint URL (optional, falls back to native Config value) */
   apiEndpoint?: string;
-  /** Custom headers for API requests (optional) */
   headers?: Record<string, string>;
 }
 ```
 
-**Returns:** `Promise<boolean>` — resolves `true` on success.
+Returns `Promise<boolean>` — resolves `true` on success.
 
 ### `FaceTec.isInitialized()`
 
-**Returns:** `Promise<boolean>`
+Returns `Promise<boolean>`.
 
 ### `FaceTec.getInitializationStatus()`
 
-**Returns:** `Promise<{ status: 'idle' | 'initializing' | 'initialized' | 'error', error?: string }>`
+Returns `Promise<InitializationStatus>`:
+
+```typescript
+interface InitializationStatus {
+  status: 'idle' | 'initializing' | 'initialized' | 'error';
+  error?: string;
+}
+```
 
 ### `FaceTec.getSDKVersion()`
 
-**Returns:** `Promise<string>`
+Returns `Promise<string>`.
 
 ### `FaceTec.startLivenessCheck(customization?)`
 
-Starts a liveness session. Applies customization and launches the FaceTec UI.
+Starts a 3D liveness session with optional UI customization.
 
 - **Resolves** with `LivenessResponse` on server response
 - **Rejects** with `{ code: ErrorType, message: string }` on failure
 
----
-
 ## Customization
 
-The `customization` argument controls all visual aspects of the FaceTec SDK UI. All fields are optional — omitted fields fall back to native Config defaults.
+Pass a `FaceTecCustomization` object to `startLivenessCheck()` to control the SDK UI. All fields are optional — omitted fields use native defaults.
 
 ### Frame & Overlay
 
-| Property               | Type     | Description                 |
-| ---------------------- | -------- | --------------------------- |
+| Property | Type | Description |
+| --- | --- | --- |
 | `outerBackgroundColor` | `string` | Background behind the frame |
-| `frameColor`           | `string` | Frame background color      |
-| `borderColor`          | `string` | Frame border color          |
+| `frameColor` | `string` | Frame background color |
+| `borderColor` | `string` | Frame border color |
 
 ### Oval
 
-| Property           | Type     | Description                 |
-| ------------------ | -------- | --------------------------- |
-| `ovalColor`        | `string` | Oval stroke color           |
+| Property | Type | Description |
+| --- | --- | --- |
+| `ovalColor` | `string` | Oval stroke color |
 | `dualSpinnerColor` | `string` | Oval spinner/progress color |
 
 ### Ready Screen
 
-| Property                   | Type                | Description                                  |
-| -------------------------- | ------------------- | -------------------------------------------- |
-| `readyScreenHeaderText`    | `string`            | Header text (supports `\n` for line breaks)  |
-| `readyScreenHeaderStyles`  | `FaceTecTextStyles` | `{ color?, fontFamily? }`                    |
-| `readyScreenSubtext`       | `string`            | Subtext below the oval. Set to `' '` to hide |
-| `readyScreenSubtextStyles` | `FaceTecTextStyles` | `{ color?, fontFamily? }`                    |
+| Property | Type | Description |
+| --- | --- | --- |
+| `readyScreenHeaderText` | `string` | Header text (supports `\n`) |
+| `readyScreenHeaderStyles` | `FaceTecTextStyles` | `{ color?, fontFamily? }` |
+| `readyScreenSubtext` | `string` | Subtext below the oval |
+| `readyScreenSubtextStyles` | `FaceTecTextStyles` | `{ color?, fontFamily? }` |
 
 ### Action Button
 
-| Property             | Type                  | Description   |
-| -------------------- | --------------------- | ------------- |
-| `actionButtonText`   | `string`              | Button label  |
-| `actionButtonStyles` | `FaceTecButtonStyles` | See below     |
+| Property | Type | Description |
+| --- | --- | --- |
+| `actionButtonText` | `string` | Button label |
+| `actionButtonStyles` | `FaceTecButtonStyles` | See below |
 
 ```typescript
 interface FaceTecButtonStyles {
@@ -339,18 +204,14 @@ interface FaceTecButtonStyles {
 
 ### Retry Screen
 
-| Property                   | Type                | Description                 |
-| -------------------------- | ------------------- | --------------------------- |
-| `retryScreenHeaderText`    | `string`            | Header text on retry screen |
-| `retryScreenHeaderStyles`  | `FaceTecTextStyles` | `{ color?, fontFamily? }`   |
-| `retryScreenSubtext`       | `string`            | Subtext on retry screen     |
-| `retryScreenSubtextStyles` | `FaceTecTextStyles` | `{ color?, fontFamily? }`   |
+| Property | Type | Description |
+| --- | --- | --- |
+| `retryScreenHeaderText` | `string` | Header on retry screen |
+| `retryScreenHeaderStyles` | `FaceTecTextStyles` | `{ color?, fontFamily? }` |
+| `retryScreenSubtext` | `string` | Subtext on retry screen |
+| `retryScreenSubtextStyles` | `FaceTecTextStyles` | `{ color?, fontFamily? }` |
 
 ### Feedback Bar
-
-| Property            | Type                       | Description |
-| ------------------- | -------------------------- | ----------- |
-| `feedbackBarStyles` | `FaceTecFeedbackBarStyles` | See below   |
 
 ```typescript
 interface FaceTecFeedbackBarStyles {
@@ -363,7 +224,7 @@ interface FaceTecFeedbackBarStyles {
 
 ### Feedback Texts
 
-Override the texts shown during the liveness scan. All fields are optional.
+Override texts shown during the liveness scan:
 
 ```typescript
 interface FaceTecFeedbackTexts {
@@ -385,12 +246,7 @@ interface FaceTecFeedbackTexts {
 }
 ```
 
-### Result Screen
-
-| Property               | Type                      | Description                         |
-| ---------------------- | ------------------------- | ----------------------------------- |
-| `resultMessageStyles`  | `FaceTecTextStyles`       | `{ color?, fontFamily? }`           |
-| `resultScreenTexts`    | `FaceTecResultScreenTexts`| Upload/success message overrides    |
+### Result Screen Texts
 
 ```typescript
 interface FaceTecResultScreenTexts {
@@ -403,32 +259,51 @@ interface FaceTecResultScreenTexts {
 }
 ```
 
-### Font notes
+### Fonts
 
-- **iOS**: Use the PostScript name (e.g., `Montserrat-SemiBold`). Must be in `Info.plist` under `UIAppFonts`.
-- **Android**: Use the font file name without extension (e.g., `Montserrat-SemiBold`). Must be in `assets/fonts/`. Uses `ReactFontManager` to resolve.
-- **Color format**: Hex strings — `#RRGGBB` or `#RRGGBBAA`.
+- **iOS**: Use the PostScript name (e.g., `Montserrat-SemiBold`). Must be listed in `Info.plist` under `UIAppFonts`.
+- **Android**: Use the font file name without extension (e.g., `Montserrat-SemiBold`). Must be in `assets/fonts/`.
+- **Colors**: Hex strings — `#RRGGBB` or `#RRGGBBAA`.
 
----
-
-## Error Types
+## Error Handling
 
 Errors are returned as promise rejections with `{ code: ErrorType, message: string }`.
 
 ```typescript
-type ErrorType =
-  | 'permission_denied'   // Camera permission denied (emitted by F3DLivenessButton)
-  | 'init_error'          // SDK initialization failed
-  | 'init_cancelled'      // Initialization cancelled by a newer initialize() call
-  | 'device_not_supported'// Device not supported by FaceTec
-  | 'session_cancelled'   // User cancelled the liveness session
-  | 'network_error'       // Network error or session timeout
-  | 'internal_error';     // Unexpected internal error
+import { FaceTec, FaceTecErrorType } from 'react-native-facetec';
+
+try {
+  const response = await FaceTec.startLivenessCheck();
+} catch (error) {
+  switch (error.code) {
+    case FaceTecErrorType.SESSION_CANCELLED:
+      // User dismissed the session
+      break;
+    case FaceTecErrorType.NETWORK_ERROR:
+      // Network issue — retry or show message
+      break;
+    case FaceTecErrorType.INIT_ERROR:
+      // SDK failed to initialize
+      break;
+    default:
+      // Handle other errors
+      break;
+  }
+}
 ```
 
-> **Note:** `permission_denied` is emitted by the `F3DLivenessButton` atom in JavaScript, not by the native module. The native module does not check or request camera permissions.
+### Error Types
 
----
+| Code | Description |
+| --- | --- |
+| `init_error` | SDK initialization failed |
+| `init_cancelled` | Initialization cancelled by a newer `initialize()` call |
+| `permission_denied` | Operation denied due to missing permissions |
+| `camera_permission` | Camera permission not granted |
+| `device_not_supported` | Device is not supported by FaceTec |
+| `session_cancelled` | User cancelled the liveness session |
+| `network_error` | Network error or session timeout |
+| `internal_error` | Unexpected internal error |
 
 ## Response Object
 
@@ -463,80 +338,30 @@ interface LivenessResponse {
 }
 ```
 
----
-
 ## Troubleshooting
 
-### Error: "Native module FaceTecLivenessModule tried to override FaceTecLivenessModule"
+### "Native module FaceTecLivenessModule tried to override FaceTecLivenessModule"
 
-React Native autolinking handles registration. **Do NOT** manually register `FaceTecLivenessPackage` in `MainApplication`.
+React Native autolinking handles registration. Do **not** manually register `FaceTecLivenessPackage` in `MainApplication`.
 
-### Error: "Could not find :facetec-sdk-X.X.X"
+### "Could not find :facetec-sdk-X.X.X"
 
 1. Verify the `.aar` is in `android/libs/`
 2. Verify `flatDir` is configured in `android/app/build.gradle`
 
-### Error: `init_error` with message `REQUEST_ABORTED`
+### `init_error` with message `REQUEST_ABORTED`
 
-The `deviceKeyIdentifier` is empty or invalid. Check your environment variable `FACETEC_DEVICE_KEY`.
+The `deviceKeyIdentifier` is empty or invalid. Verify your device key from the [FaceTec dashboard](https://dev.facetec.com/account).
 
-### Initialization hangs / times out
+### Initialization hangs or times out
 
-The API endpoint may be unreachable from the device. The OkHttp client has 120s timeouts with 2 retries (~6 min total). Verify network connectivity to the configured `FACETEC_API_ENDPOINT`.
+The API endpoint may be unreachable. The HTTP client uses 120s timeouts with 2 retries (~6 min total). Verify network connectivity to your configured endpoint.
 
 ### Custom font not applying
 
-- **iOS**: Verify the font is in `Info.plist` under `UIAppFonts`. Use the PostScript name.
-- **Android**: Verify the `.ttf` is in `assets/fonts/`. Use the file name without extension.
+- **iOS**: Verify the font is listed in `Info.plist` under `UIAppFonts`. Use the PostScript name.
+- **Android**: Verify the `.ttf`/`.otf` file is in `assets/fonts/`. Use the file name without extension.
 
-### Dependency conflicts with npm install
+## License
 
-Always use `yarn install` to respect `yarn.lock`.
-
----
-
-## Project Structure
-
-```text
-# Project root
-your-react-native-project/
-├── android/
-│   └── libs/
-│       └── facetec-sdk-X.X.XX.aar          ← SDK binary (not in git)
-├── ios/
-│   └── FaceTecSDKForDevelopment.xcframework/ ← SDK binary (not in git)
-│
-# Native module
-├── native_modules/
-│   └── react-native-facetec/
-│       ├── src/
-│       │   ├── index.ts                     ← Public exports
-│       │   └── FaceTecModule.ts             ← TS types and FaceTec API
-│       ├── ios/
-│       │   └── FaceTecLiveness/
-│       │       ├── FaceTecModule.swift       ← Init + startLivenessCheck
-│       │       ├── FaceTecModule.m           ← ObjC bridge
-│       │       ├── Config.swift
-│       │       ├── SessionRequestProcessor.swift
-│       │       └── SampleAppNetworkingRequest.swift
-│       ├── android/
-│       │   └── src/main/java/com/facetec/
-│       │       ├── FaceTecLivenessModule.java  ← Init + startLivenessCheck
-│       │       ├── FaceTecLivenessPackage.java
-│       │       ├── Config.java
-│       │       ├── SessionRequestProcessor.java
-│       │       ├── SampleAppNetworkingRequest.java
-│       │       ├── SampleAppNetworkingLibExample.java
-│       │       └── FaceTecServerResponse.java
-│       ├── package.json
-│       ├── react-native-facetec.podspec
-│       └── README.md
-│
-# App-level integration
-├── app/
-│   └── atoms/Facetec/
-│       ├── F3DLivenessButton.tsx             ← Button atom (permission + init + session)
-│       ├── constants.ts                      ← Default customization + initConfig from env
-│       ├── styles.tsx
-│       └── index.tsx
-```
+MIT
