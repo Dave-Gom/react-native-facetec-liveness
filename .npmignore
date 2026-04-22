@@ -1,0 +1,14 @@
+# Build artifacts
+android/build/
+android/libs/
+android/.gradle/
+android/.idea/
+android/local.properties
+ios/FaceTecSDK.xcframework/
+
+# Dev files
+tsconfig.json
+tsconfig.build.json
+.DS_Store
+**/.DS_Store
+yarn.lock
