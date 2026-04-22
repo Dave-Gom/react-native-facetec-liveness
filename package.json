@@ -1,5 +1,5 @@
 {
-  "name": "react-native-facetec",
+  "name": "@davegzarca/react-native-facetec",
   "version": "1.0.0",
   "description": "React Native FaceTec SDK Integration",
   "main": "lib/index.js",
